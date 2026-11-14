@@ -2100,3 +2100,206 @@ body.fi-resizing { cursor: col-resize; user-select: none; }
 .fi-server-switch .fi-server-switch-trigger { border: 1px solid var(--pc-border); border-radius: var(--pc-radius-control); }
 .fi-server-switch .fi-server-switch-list { position: absolute; top: calc(100% + 4px); left: 0; right: auto; z-index: 20; min-width: 200px; }
 .fi-server-switch-list .fi-server-choice { width: 100%; justify-content: flex-start; }
+
+/* ── The Rules screen (S10, B-275; app/routes/automation.tsx) ─────────────────────────
+   One account's or address's rules as sentence cards, the four-step editor, History and Sending.
+   Tokens only (fabric-tokens.css); the shared pieces (.fi-input, .fi-field, .fi-badge, .fi-callout,
+   .fi-load-failure, .fi-pre) come from settings.css. The page scrolls; the editor's steps sit two by
+   two on a wide window and stack on a narrow one. */
+.fi-rules {
+  min-height: 100dvh;
+  background: var(--pc-bg);
+  color: var(--pc-text);
+  font-size: var(--pc-type-body);
+  line-height: 1.5;
+}
+.fi-rules * { box-sizing: border-box; }
+.fi-rules :is(button, input, textarea, select) { font: inherit; color: inherit; }
+.fi-rules button { cursor: pointer; }
+.fi-rules :is(button, a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--pc-focus);
+  outline-offset: 2px;
+}
+.fi-rules a { color: var(--pc-link); }
+.fi-rules-inner { max-width: 960px; margin: 0 auto; padding: var(--pc-space-5) var(--pc-space-5) 64px; }
+.fi-rules-head h1 {
+  margin: var(--pc-space-3) 0 2px;
+  font-size: var(--pc-type-section);
+  font-weight: 650;
+  letter-spacing: -0.3px;
+  overflow-wrap: anywhere;
+}
+.fi-rules-head > p { margin: 0; }
+.fi-rules-back { font-size: 13px; font-weight: 600; text-decoration: none; }
+.fi-rules-back:hover { text-decoration: underline; }
+.fi-rules-tabs {
+  display: flex;
+  gap: 2px;
+  margin: var(--pc-space-4) 0 var(--pc-space-4);
+  border-bottom: 1px solid var(--pc-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.fi-rules-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 8px 12px;
+  margin-bottom: -1px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--pc-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+.fi-rules-tabs button[aria-selected="true"] { color: var(--pc-text); border-bottom-color: var(--pc-link); }
+.fi-rules-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: var(--pc-radius-pill);
+  background: var(--pc-warning-soft);
+  color: var(--pc-warning);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+.fi-rules-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--pc-space-3); margin-bottom: var(--pc-space-3); }
+.fi-rules-toolbar > p { margin: 0; }
+.fi-rules-list,
+.fi-rules-runs,
+.fi-rules-starts { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--pc-space-2); }
+.fi-rules-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--pc-space-3);
+  padding: var(--pc-space-4);
+  border: 1px solid var(--pc-border);
+  border-radius: 12px;
+  background: var(--pc-panel);
+  transition: opacity var(--pc-duration-state) var(--pc-ease);
+}
+.fi-rules-card.is-paused .fi-rules-card-main { opacity: 0.6; }
+.fi-rules-card-main { flex: 1 1 320px; min-width: 0; }
+.fi-rules-card-main h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: var(--pc-type-card);
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.fi-rules-card-side { display: flex; align-items: center; gap: var(--pc-space-2); }
+.fi-rules-sentence { margin: 0; overflow-wrap: anywhere; }
+.fi-rules-sentence strong { font-weight: 650; }
+.fi-rules-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 6px;
+  border: 1px solid var(--pc-border);
+  border-radius: var(--pc-radius-pill);
+  background: var(--pc-bg);
+  font-size: 12px;
+  font-weight: 600;
+}
+.fi-rules-switch > span {
+  position: relative;
+  width: 30px;
+  height: 18px;
+  border-radius: var(--pc-radius-pill);
+  background: var(--pc-border-strong);
+  transition: background var(--pc-duration-state) var(--pc-ease);
+}
+.fi-rules-switch > span::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--pc-bg);
+  transition: transform var(--pc-duration-state) var(--pc-ease);
+}
+.fi-rules-switch[aria-checked="true"] > span { background: var(--pc-accent); }
+.fi-rules-switch[aria-checked="true"] > span::after { transform: translateX(12px); background: var(--pc-on-accent); }
+.fi-rules-switch:disabled { opacity: 0.55; cursor: not-allowed; }
+.fi-rules-empty {
+  padding: var(--pc-space-5);
+  border: 1px dashed var(--pc-border);
+  border-radius: 12px;
+  text-align: left;
+}
+.fi-rules-empty > p { margin: 0 0 var(--pc-space-2); }
+.fi-rules-starts { margin: var(--pc-space-3) 0; }
+.fi-rules-starts .fi-secondary { width: 100%; justify-content: flex-start; white-space: normal; text-align: left; }
+
+/* The editor: the sentence it builds on top, four numbered steps, the buttons with the reason. */
+.fi-rules-editor { display: grid; gap: var(--pc-space-4); }
+.fi-rules-editor-head h2 { margin: 0; font-size: 18px; font-weight: 650; }
+.fi-rules-editor-head .fi-rules-sentence {
+  margin-top: var(--pc-space-3);
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--pc-panel);
+}
+.fi-rules-steps { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--pc-space-3); }
+.fi-rules-step {
+  min-width: 0;
+  padding: var(--pc-space-4);
+  border: 1px solid var(--pc-border);
+  border-radius: 12px;
+  background: var(--pc-bg);
+}
+/* The step the switch opened (Test run) takes focus: it is marked, not ringed like a control. */
+.fi-rules-step:focus { outline: none; box-shadow: 0 0 0 2px var(--pc-focus); }
+.fi-rules-step h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-size: 14px; font-weight: 650; }
+.fi-rules-step-n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--pc-accent-soft);
+  color: var(--pc-text);
+  font-size: 12px;
+}
+.fi-rules-step > .fi-hint { margin: 0 0 4px; }
+.fi-rules-more { margin-top: var(--pc-space-3); }
+.fi-rules-more > summary,
+.fi-rules-details > summary { cursor: pointer; color: var(--pc-text-muted); font-size: 12px; }
+.fi-rules-more > .fi-hint { margin: 4px 0 0 24px; }
+.fi-rules-limit { max-width: 120px; }
+.fi-rules-footer { display: flex; flex-wrap: wrap; align-items: center; gap: var(--pc-space-2); }
+.fi-rules-footer > .fi-hint { flex-basis: 100%; margin: 0; }
+
+/* History and Sending: one line per run, its state as a badge, the ids folded under Details. */
+.fi-rules-run {
+  padding: var(--pc-space-3) var(--pc-space-4);
+  border: 1px solid var(--pc-border);
+  border-radius: 12px;
+}
+.fi-rules-run > p { margin: 4px 0 0; overflow-wrap: anywhere; }
+.fi-rules-run-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.fi-rules-run-head strong { min-width: 0; overflow-wrap: anywhere; }
+.fi-rules-run .fi-buttons:empty { display: none; }
+.fi-rules-details { margin-top: var(--pc-space-2); }
+.fi-rules-details .fi-facts { margin-top: 6px; font-size: 12px; }
+
+@media (max-width: 720px) {
+  .fi-rules-inner { padding: var(--pc-space-4) var(--pc-space-3) 48px; }
+  .fi-rules-steps { grid-template-columns: minmax(0, 1fr); }
+  .fi-rules-card-side { flex-basis: 100%; justify-content: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fi-rules-card,
+  .fi-rules-switch > span,
+  .fi-rules-switch > span::after { transition: none; }
+}

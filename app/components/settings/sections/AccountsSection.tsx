@@ -273,7 +273,7 @@ function GmailPanel({ account: a, entryKey, onRemoved, onSetup }: { account: Acc
         <GmailProblem account={a} projectNumber={setup.data?.projectNumber ?? null} onRetry={retry} onSetup={onSetup} busy={!!work.busy} />
         <div className="fi-buttons">
           <Link className="fi-secondary" to={"/?account=" + encodeURIComponent("gmail:" + a.id)}>{t("Open its mail")}</Link>
-          <Link className="fi-secondary" to={"/automation/" + encodeURIComponent("gmail:" + a.id)}>{t("Rules and history")}</Link>
+          <Link className="fi-secondary" to={"/automation/" + encodeURIComponent("gmail:" + a.id)}>{t("Rules")}</Link>
         </div>
         <ActionResult result={work.result} />
       </PanelBlock>
@@ -327,7 +327,7 @@ function OutlookPanel({ account: a, entryKey, onRemoved, onSetup }: { account: A
         <SecretExpiryNotice expiry={setup.data?.secretExpiry ?? null} />
         <div className="fi-buttons">
           <Link className="fi-secondary" to={"/?account=" + encodeURIComponent("outlook:" + a.id)}>{t("Open its mail")}</Link>
-          <Link className="fi-secondary" to={"/automation/" + encodeURIComponent("outlook:" + a.id)}>{t("Rules and history")}</Link>
+          <Link className="fi-secondary" to={"/automation/" + encodeURIComponent("outlook:" + a.id)}>{t("Rules")}</Link>
         </div>
         <ActionResult result={work.result} />
       </PanelBlock>

@@ -233,8 +233,6 @@ export const COMMON: Readonly<Record<string, string>> = {
 	"Removing…": "Убираем…",
 	"Reply": "Ответить",
 	"Report spam": "Это спам",
-	"Rules & history": "Правила и история",
-	"Rules and history": "Правила и история",
 	"Save": "Сохранить",
 	"Saving…": "Сохраняем…",
 	"Search": "Искать",

@@ -19,8 +19,8 @@
 | SCN-011 | Organize a message | Find and handle a conversation | P-01 | ST-002, FLW-02 | draft | 2026-10-07 PASS |
 | SCN-012 | Change mail settings | Resume and manage preferences | P-01 | ST-007, FLW-07 | draft | 2026-10-07 PARTIAL |
 | SCN-013 | Ask AI for an explanation or draft | Review AI help | P-01 | ST-004, FLW-04 | validated | 2026-10-07 PARTIAL |
-| SCN-014 | Dry-run a rule | Set up a rule | P-01 | ST-005, FLW-05 | validated | 2026-10-07 PARTIAL |
-| SCN-015 | Enable and pause a rule | Set up a rule | P-01 | ST-005, FLW-05 | validated | 2026-10-07 PARTIAL |
+| SCN-014 | Test-run a rule | Set up a rule | P-01 | ST-005, FLW-05 | validated | 2026-10-07 PARTIAL |
+| SCN-015 | Turn a rule on and pause it | Set up a rule | P-01 | ST-005, FLW-05 | validated | 2026-10-07 PARTIAL |
 | SCN-016 | Inspect cloud run history | Inspect and control a run | P-01 | ST-006, FLW-06 | validated | 2026-10-07 PARTIAL |
 | SCN-017 | Resolve an action approval | Inspect and control a run | P-01 | ST-006, FLW-06 | draft | 2026-10-07 PASS |
 | SCN-018 | Wait for a local tool or denied tool | Inspect and control a run | P-01 | ST-006, FLW-06 | draft | 2026-10-07 PARTIAL |
@@ -382,43 +382,45 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Product:** unobserved
 - **Today:** Partial. The unified inbox has an AI panel behind a header toggle (`aria-expanded`), closed until opened: a fourth column on windows 1400 px and wider, a modal sheet that keeps focus and closes on Esc below that (B11-01, 2026-10-08). It reads one Cloudflare address and says which — the open message's, else the one picked in the panel, else the view's; a Gmail, Outlook or IMAP message is named as not readable by it. With a message open on that address, the first suggested prompts explain it or draft a reply. A failed model turn shows an error bubble whose Retry sends the last prompt again (B11-02); the messages an answer read are listed under it and open in the reader (B11-03, at most five, the rest counted); a saved draft opens in the composer from the server, nothing is sent. Rule analysis/draft output is rendered in history. Not yet observed against a live model.
 
-### SCN-014: Dry-run a rule
+### SCN-014: Test-run a rule
 - **Persona:** P-01
 - **Feature:** Set up a rule
 - **Traces:** ST-005, FLW-05, JTBD-02, JRN-02; RE-001, RE-003
 - **Entry point:** SCR-07
 - **Preconditions:** User session and relevant account or fixture available; capabilities are checked before action.
 - **Steps:**
-  1. Define accounts, condition, actions, recipients, tools and limits -> missing requirements are identified.
-  2. Choose Dry-run -> matched input and proposed actions are shown without external side effects.
+  1. Open Rules for an address or account (the reader's "Rules for this address" or "Rules for this account", the sidebar's Rules, or a settings button Rules) -> the Rules tab lists each rule as a sentence; an empty one offers three starting points.
+  2. New rule or a starting point -> the editor's four steps: When (from, the subject contains, the message is about; at least one), Do (Archive, Mark as read, Prepare a reply draft, Forward to…, Call a tool under More), How (Ask me before each action or Act on its own; at most N a day), Test run.
+  3. Test run on one of the 20 newest messages -> the result in words ("Would forward it to …", "Would not act: the subject does not contain “invoice”"), acting on nothing.
 - **Expected result:** The user can inspect the exact destinations and allowed work before enabling.
 - **Alt paths:** Return to the previous surface without causing an external action; preserve confirmed saved work.
-- **UI elements:** SCR-07; named actions and fields in the steps; visible state and recovery control.
+- **UI elements:** SCR-07 (S10, B-275); the sentence card, the starting points, the four steps, Test run with its result and Details.
 - **States covered:** loading, empty, error, success
-- **Errors & recovery:** Unknown destination, missing grant or tool schema blocks enable; dry-run failure preserves rule input.
+- **Errors & recovery:** Unknown destination, missing grant or tool schema blocks turning it on; a failed test run says why in words and keeps the form.
 - **Status:** validated
-- **Coverage:** app/routes/automation.tsx:243, app/routes/automation.tsx:504, workers/automation/index.ts:212; tests/c2-automation.test.ts (dry-run returns executed:false with no mailbox, outbox, run, counter or network effect: AUD-B11-05)
+- **Coverage:** app/routes/automation.tsx (`RuleEditor`, `startingPoints`), app/lib/rule-sentence.ts (`ruleSentence`, `testRunSentence`, `whyNot`), workers/automation/index.ts (`dryRun`); tests/rule-sentence.test.ts, tests/automation-ui.test.ts, tests/c2-automation.test.ts (dry-run returns executed:false with no mailbox, outbox, run, counter or network effect: AUD-B11-05)
 - **Product:** unobserved
-- **Today:** Partial. Rule fields and dry-run JSON preview are wired; preview text states no mail mutation, and a successful dry-run of the current form values is what unlocks Enable. Live AI/tool preview acceptance remains open. UI walk 2026-10-08: the gate had made Enable depend on typing an internal message id; the editor now offers this account's 20 newest inbox messages by sender and subject (newest preselected, a typed id only when the list cannot be read) and says the result in a sentence with the JSON under Details (`feedAccount`, `previewLabel`, `dryRunSentence`, `tests/automation-ui.test.ts`). 2026-10-08: a cloud-tool action may map `{{email.preview}}` — the first 300 characters as plain text — so a rule that tells the operator's signal API about urgent mail carries a preview, not the whole message (`workers/automation/policy.ts`, `tests/automation.test.ts`). The server holds the same gate (B-67): saving a rule enabled is refused with 409 unless a dry-run of exactly its content (name aside) succeeded in the last 24 hours, or it was already on with that content; this binds the API and agents (`save_rule`) too.
+- **Today:** Partial. Rule fields and dry-run JSON preview are wired; preview text states no mail mutation, and a successful dry-run of the current form values is what unlocks Enable. Live AI/tool preview acceptance remains open. UI walk 2026-10-08: the gate had made Enable depend on typing an internal message id; the editor now offers this account's 20 newest inbox messages by sender and subject (newest preselected, a typed id only when the list cannot be read) and says the result in a sentence with the JSON under Details (`feedAccount`, `previewLabel`, `dryRunSentence`, `tests/automation-ui.test.ts`). 2026-10-08: a cloud-tool action may map `{{email.preview}}` — the first 300 characters as plain text — so a rule that tells the operator's signal API about urgent mail carries a preview, not the whole message (`workers/automation/policy.ts`, `tests/automation.test.ts`). The server holds the same gate (B-67): saving a rule enabled is refused with 409 unless a dry-run of exactly its content (name aside) succeeded in the last 24 hours, or it was already on with that content; this binds the API and agents (`save_rule`) too. 2026-11-14 (S10, B-275): the screen is "Rules" everywhere it is named, built in the workbench styles, with the editor in four steps and the result of a test run in words, the condition that failed named from the picked message (`whyNot`); the UI says "Test run" where the API says dry-run.
 
-### SCN-015: Enable and pause a rule
+### SCN-015: Turn a rule on and pause it
 - **Persona:** P-01
 - **Feature:** Set up a rule
 - **Traces:** ST-005, FLW-05, JTBD-02, JRN-02; RE-001, RE-003
 - **Entry point:** SCR-07
 - **Preconditions:** User session and relevant account or fixture available; capabilities are checked before action.
 - **Steps:**
-  1. Review a completed dry-run and enable -> enabled version and scope are visible.
-  2. Pause -> future launches stop and current run state remains inspectable.
+  1. Review a completed test run and Turn on -> the card's switch is on; Turn on stays locked, with "Test-run it on a message first, so you see what it will do." beside it, until a test run of exactly the values on screen; any change locks it again. Save without turning on is always there.
+  2. The card's switch on a paused rule whose values were not test-run on this screen -> the editor opens at its Test run step (the server's 409 does the same).
+  3. Switch off -> the card is dimmed with Paused; future launches stop and History keeps what ran.
 - **Expected result:** The user can enable cloud execution and stop future work explicitly.
 - **Alt paths:** Return to the previous surface without causing an external action; preserve confirmed saved work.
-- **UI elements:** SCR-07; named actions and fields in the steps; visible state and recovery control.
+- **UI elements:** SCR-07 (S10, B-275); the card switch, Turn on with its reason, Save without turning on (Save and pause on a rule that is on), Cancel.
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Save or pause failure reports the last confirmed state; editing grants requires a new reviewed version. The daily action limit counts only messages that met every condition, the AI condition included; one past it is listed as skipped, "Daily rule limit reached", and nothing is done (B-05). An AI condition is checked at most 200 times a day per rule ("Daily limit of AI checks reached"). A forward never runs on a message to or from its own address (A-9) or one whose subject already starts with three forwards (A-9b, B-184, since 0.56.0: two addresses forwarding to each other stop there, not at the daily limit; `forwardLoops`, tests/automation-engine.test.ts).
 - **Status:** validated
-- **Coverage:** app/routes/automation.tsx:464, app/routes/automation.tsx:519, workers/automation/engine.ts:29, tests/automation-integration.test.ts:196
+- **Coverage:** app/lib/rule-gate.ts (`enableLocked`, `switchOnStep`), app/routes/automation.tsx (`toggle`, `RuleEditor`), workers/automation/engine.ts:29, workers/automation/index.ts (`saveRuleReviewed`); tests/automation-ui.test.ts, tests/automation-integration.test.ts:196
 - **Product:** unobserved
-- **Today:** Partial. Enable/pause controls and durable version checks exist, and the row and editor show the rule version. Enable stays locked until a dry-run of the current form values succeeds, and any edit re-locks it; pausing or saving an unchanged enabled rule needs no dry-run (UI gate; the server does not yet refuse an enable without one). The local workerd pause test verifies an approved pending action is cancelled before a synthetic mailbox mutation (RE-005). Continuous deployed execution with a Mac off is not observed.
+- **Today:** Partial. Enable/pause controls and durable version checks exist, and the row and editor show the rule version. Enable stays locked until a dry-run of the current form values succeeds, and any edit re-locks it; pausing or saving an unchanged enabled rule needs no dry-run (UI gate; the server does not yet refuse an enable without one). The local workerd pause test verifies an approved pending action is cancelled before a synthetic mailbox mutation (RE-005). Continuous deployed execution with a Mac off is not observed. 2026-11-14 (S10, B-275): the gate is kept and named in words: Turn on is locked until a test run of the current values (every value tried on the screen counts, as the server's 24-hour receipt does), any change locks it again, and the switch on an untried paused rule opens the Test run step instead of failing. The server refuses an untried enable too (B-67).
 
 ### SCN-016: Inspect cloud run history
 - **Persona:** P-01
@@ -427,17 +429,17 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Entry point:** SCR-08
 - **Preconditions:** User session and relevant account or fixture available; capabilities are checked before action.
 - **Steps:**
-  1. Open history after the Mac was off -> cloud runs and timestamps load.
-  2. Open a run -> source, rule version, actions, attempts, result and cost availability appear.
+  1. Open History after the Mac was off -> cloud runs and timestamps load; the tab counts the runs waiting for the person.
+  2. Read a run -> the message's subject with Find it in mail, what the rule did or wants to do, its state in words ("Waiting for your approval", "Done", "Skipped: it did not match", "Failed: <reason>"), when; Approve and Cancel on a waiting run; the rule version, attempts and ids under Details.
 - **Expected result:** Run history explains whether work completed, failed, waits or has an unknown outcome.
 - **Alt paths:** Return to the previous surface without causing an external action; preserve confirmed saved work.
-- **UI elements:** SCR-08; named actions and fields in the steps; visible state and recovery control.
+- **UI elements:** SCR-08 (S10, B-275): the History tab, Sending tab for a Cloudflare address while something is being sent.
 - **States covered:** loading, empty, error, success
-- **Errors & recovery:** History failure offers retry, not an empty success list; unavailable cost is labeled unavailable.
+- **Errors & recovery:** History failure offers retry, not an empty success list; a cost is shown when known.
 - **Status:** validated
-- **Coverage:** app/routes/automation.tsx:540, workers/automation/index.ts:62, tests/automation-integration.test.ts:239
+- **Coverage:** app/routes/automation.tsx (`History`, `runState`, `needsYou`), workers/automation/index.ts:62; tests/automation-ui.test.ts, tests/automation-check.test.ts, tests/automation-integration.test.ts:239
 - **Product:** unobserved
-- **Today:** Partial. Recent runs show status, action destination, analysis and detail; Cloudflare also shows outbox states. Each run card now shows the rule version, the attempt count and an explicit "cost unavailable" label, and the list has a loading branch. A full source link is still missing. Workerd restart recovery is locally tested, not proof of production cloud history.
+- **Today:** Partial. Recent runs show status, action destination, analysis and detail; Cloudflare also shows outbox states. Each run card now shows the rule version, the attempt count and an explicit "cost unavailable" label, and the list has a loading branch. A full source link is still missing. Workerd restart recovery is locally tested, not proof of production cloud history. 2026-11-14 (S10, B-275): History says each state in words, with the reason inside the sentence; the version, attempts and ids fold under Details, and no cost is shown because the run model holds none (a cost is shown when known). The sender is not on a run, so the line names the subject and links to the message through the mail search.
 
 ### SCN-017: Resolve an action approval
 - **Persona:** P-01
@@ -951,7 +953,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   2. Hide them… -> confirm -> the addresses with no mail are hidden; or the eye next to one address hides just it.
   3. Hidden (N) -> open one on its own, or Show again.
   4. Many domains (more than 8 groups) -> a field, Find an address or domain, keeps the domains whose name holds the words (all their addresses) and the addresses that hold them, from every address not hidden, listed or not, with their groups open; Escape or × clears it; nothing matches -> the sidebar says so (B-266).
-  5. The addresses are part of the sidebar's one scroll, as long as they are, with Rules & history and Settings after them. With many addresses the three ways to add one are icons in one row, named on hover and for screen readers (B-266).
+  5. The addresses are part of the sidebar's one scroll, as long as they are, with Rules and Settings after them. With many addresses the three ways to add one are icons in one row, named on hover and for screen readers (B-266).
   6. The edge after the sidebar, and the one after the mail list, is dragged (or moved with the arrow keys, Shift for bigger steps, Home and End for the bounds) to make the column wider or narrower; the widths are kept on this device and a double click gives the default back. A long domain name or a message's preview then shows whole (B-266).
 - **Expected result:** The sidebar and All inboxes hold the addresses the operator uses; nothing stops receiving.
 - **Alt paths:** All lists every address again; the choice is remembered on the device, the hidden list on the server. Escape cancels the Hide them… confirmation, as it does Spam's Delete all confirmation (`tests/mail-keys.test.ts`).
@@ -1175,7 +1177,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   4. The server signs in to IMAP over TLS, reads the folder list and opens the Inbox, then signs in to SMTP; only then is the password kept, encrypted -> the account opens in Settings with "Older mail is being read: N%. New mail already arrives."
 - **Expected result:** Mail of any provider with IMAP and SMTP is read and sent here like Gmail's, with rules, agents, categories and spam, also while the Mac is closed.
 - **Alt paths:** An address of another provider's domain is said before connecting ("This looks like an iCloud Mail address"). Connecting the same address again with a new password keeps the account and its mail. Back returns to the provider cards. A server with no credential key yet offers **Make the key**: the server makes one and saves it in its own settings, the dialog waits until the server uses it (a few seconds) and then shows the connect form; a server without its own Cloudflare token says how to set the key instead (`tests/credential-key.test.ts`).
-- **UI elements:** SCR-02; provider cards; the form (Address, App password, the server fields for Other, Connect, Back); the account panel (Sync, Servers, Open its mail, Rules and history).
+- **UI elements:** SCR-02; provider cards; the form (Address, App password, the server fields for Other, Connect, Back); the account panel (Sync, Servers, Open its mail, Rules).
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** SCN-056. Nothing is kept until both servers took the password. Esc, Close or Back with a typed address, app password or server asks "Discard your changes to the new account?" (Keep editing / Discard changes); an untouched form closes at once.
 - **Status:** validated
@@ -1274,7 +1276,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   3. "Outlook is connected" page -> back in the app, the account is under Outlook with "importing"; the Inbox comes first, newest first, and new mail arrives while the import runs.
 - **Expected result:** Outlook.com and Microsoft 365 mail is read, triaged, answered and sent here like Gmail's, with rules, agents, categories and spam, also while the Mac is closed.
 - **Alt paths:** Connecting the same account again keeps its mail and where its sync stands; another Microsoft user with the same address starts over. An address already connected as an IMAP or Gmail account is refused (it would be read twice).
-- **UI elements:** SCR-02; the connect step (Connect Outlook in browser, Check the setup, Use another client secret…); the browser's result page; the account panel (Sync, importing percentage, Open its mail, Rules and history, Disconnect…).
+- **UI elements:** SCR-02; the connect step (Connect Outlook in browser, Check the setup, Use another client secret…); the browser's result page; the account panel (Sync, importing percentage, Open its mail, Rules, Disconnect…).
 - **States covered:** loading, error, success
 - **Errors & recovery:** Every refusal ends on a page with the one next step and nothing kept: Cancel on Microsoft's page; an organization that needs its administrator (SCN-059); a redirect URI Microsoft does not know (the exact URI to add); an expired or refused client secret (Open the Outlook setup); an account type the app registration does not accept; a sign-in step not finished; a permission not given; a Microsoft account with no Outlook mailbox; a sign-in older than ten minutes or from another browser. Disconnect deletes the access here and says to remove Fabric Inbox in the Microsoft account too (Microsoft has no way for an app to give it back).
 - **Status:** validated
@@ -1701,7 +1703,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
   4. Where the administrator gave me Read, send and choose its agent: Who answers in the sidebar -> the members' page lists those mailboxes, each with the agent answering it; choose another of the server's agents, or Off -> "sales@… is answered by Support." (or "… is Off. New mail stays for you.").
 - **Expected result:** I handle my mailboxes' mail and see nothing of the rest of the server: no settings, categories, rules, agents' runs or other mailboxes; of the agents I see only their names, and only where I may choose one.
 - **Alt paths:** No mailbox given yet: the sidebar says to ask the administrator. Settings opened from a link: a page says settings are the administrators'. A mailbox the administrator took away: its routes answer that I reach only my own. Answer, send, move or mark in a Read only mailbox: refused with "You can read this mailbox but not change it or send from it. Ask an administrator for Read and send." (B-160). In a Read only mailbox the message shows "You can only read this mailbox. Ask an administrator for Read and send." in place of Reply, Reply all and Forward, and Compose offers only the mailboxes I may send from (off when there is none); moving and marking are refused by the server with the sentence above.
-- **UI elements:** SCR-01 (the sidebar without Settings, Rules & history, Agents' answers, categories, Add address and Hide; Who answers when I may choose an agent), SCR-02 (the administrators-only page, with Who answers your mailboxes when I may choose an agent).
+- **UI elements:** SCR-01 (the sidebar without Settings, Rules, Agents' answers, categories, Add address and Hide; Who answers when I may choose an agent), SCR-02 (the administrators-only page, with Who answers your mailboxes when I may choose an agent).
 - **States covered:** loading, empty, error, success
 - **Errors & recovery:** Delete all now in Spam empties my Cloudflare mailboxes only; Not discarded brings back my own mailboxes' mail and takes back no shared discard rule. An action only an administrator may take (a mailbox's own settings and signature, its forwarding, editing an agent, discard rules) is refused with a sentence that says so. Choosing an agent that leaves drafts for an account that keeps none is refused with the reason; the agents that cannot load show the error with Retry.
 - **Status:** draft

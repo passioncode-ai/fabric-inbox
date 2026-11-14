@@ -288,8 +288,9 @@ function GmailAccountPage() {
         <Link
           className="underline"
           to={"/automation/" + encodeURIComponent("gmail:" + accountId)}
+          state={{ from: "mail" }}
         >
-          {t("Rules and history")}
+          {t("Rules")}
         </Link>
       </nav>
       <header className="my-6 flex flex-wrap justify-between gap-3">

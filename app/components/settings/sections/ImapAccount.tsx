@@ -241,7 +241,7 @@ export function ImapPanel({ account: a, entryKey, onRemoved }: { account: Accoun
         ) : null}
         <div className="fi-buttons">
           <Link className="fi-secondary" to={"/?account=" + encodeURIComponent("imap:" + a.id)}>{t("Open its mail")}</Link>
-          <Link className="fi-secondary" to={"/automation/" + encodeURIComponent("imap:" + a.id)}>{t("Rules and history")}</Link>
+          <Link className="fi-secondary" to={"/automation/" + encodeURIComponent("imap:" + a.id)}>{t("Rules")}</Link>
         </div>
         <ActionResult result={work.result} />
       </PanelBlock>

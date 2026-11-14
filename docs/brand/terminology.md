@@ -7,7 +7,7 @@ Contract: brand-contract v1
 |---|---|---|
 | Rule | Automation recipe | Saved bounded automation |
 | Run | AI job | One recorded rule invocation |
-| Dry-run | Trial send | Preview with no external side effects |
+| Test run | Dry-run (in the interface; the API and MCP keep `dry-run`), Trial send | Preview with no external side effects (S10, 2026-11-14) |
 | Agent | Bot, AI assistant (for address agents) | Reusable versioned definition that answers mail on assigned addresses |
 | Project address | Alias, forwarding address | An address on a served project domain, received by the Worker |
 | Reply policy | Auto-reply settings | What an agent may send without the operator: mode, allowed intents, daily limit |
@@ -167,7 +167,7 @@ A new term joins this table before its first use in `shared/i18n/ru/`.
 | Drafts only / Can send | Только черновики / Может отправлять | |
 | Revoke | Отозвать | Удалить ключ |
 | Reply policy | правила ответа | автоответ |
-| Rule / Run / Dry-run | правило / запуск / Пробный запуск | рецепт |
+| Rule / Run / Test run | правило / запуск / Пробный запуск | рецепт |
 | Knowledge / Knowledge collection / Passage | Знания / коллекция знаний / фрагмент | база знаний (for one set), чанк |
 | Category / Project | категория / проект | фильтр, ярлык |
 | App password | пароль приложения | пароль почты |

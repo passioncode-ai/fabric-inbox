@@ -1,0 +1,1572 @@
+{
+ "what": "Copylot copy check (copylot_check_batch, register ui) of every new or changed string of S10, the Rules screen (B-275)",
+ "date": "2026-11-14",
+ "blocking": 0,
+ "rows": [
+  {
+   "locale": "en-US",
+   "text": "Rules for {name}",
+   "reportId": "851c25b9-cbc6-452b-b180-08a7b77eb3a3",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Cloudflare address",
+   "reportId": "183238d6-0886-4327-a4da-933f91a659ba",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Gmail account",
+   "reportId": "9cc03a0a-5f83-41a1-b997-1d4a84157414",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Outlook account",
+   "reportId": "08dca011-208e-4e51-9610-4a32243c9c54",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "IMAP account",
+   "reportId": "106321e0-c30e-40a0-8e17-18250dfa8a34",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Back to settings",
+   "reportId": "0d66a661-5fe4-4287-868f-d448278312ea",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "History",
+   "reportId": "3e344d03-bf53-4be1-85e1-0d0071849d32",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "{n} wait for you",
+   "reportId": "3843d9c6-4758-4526-9e1a-a75f2b8317fc",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Loading rules…",
+   "reportId": "39cd1a77-fedc-460b-9516-9e0d9b79048f",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "The rules could not load: {reason}",
+   "reportId": "6521c412-da7b-49d3-8c4b-206231d7d7f5",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "A rule acts on new mail that arrives here.",
+   "reportId": "aa2556f6-2d76-4958-8793-f7ac7e0b90e7",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Start from one of these, or from nothing:",
+   "reportId": "14b6d828-5f47-437c-9f10-dc6ab5ee7814",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Archive newsletters from a sender",
+   "reportId": "ab9836f5-7fb5-46e4-9e3f-38a9e84446b4",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Prepare a reply draft when a customer asks about something",
+   "reportId": "c79b5855-4bb4-4913-959f-bea9c141d830",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Forward invoices to another address",
+   "reportId": "251e9a99-80b3-4852-bb1a-a21b04f7417f",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Customer questions",
+   "reportId": "8e6fd3b3-e261-485a-bbf2-cd5c20818b7e",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "a customer asks a question about our product",
+   "reportId": "72de0a5e-4b9f-47dd-b6bb-fc34acd815f4",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Invoices",
+   "reportId": "51613c31-c018-43b8-8553-046056d26999",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "invoice",
+   "reportId": "befcc341-0fcf-4346-b285-fd235b41c73d",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Paused",
+   "reportId": "d883ac35-eafb-4623-a73c-82484ccee29c",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "On",
+   "reportId": "b38ce9c0-9e52-40ca-9191-0dcce187b156",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Off",
+   "reportId": "3408830f-7e9f-4076-9df8-b3c15f2f3fc9",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Turned on: {name}",
+   "reportId": "d86887b3-2479-4d00-ae4d-0279be1c00a9",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "The change was not saved: {reason}",
+   "reportId": "2247dd7d-32af-42a8-8fc4-9e61c6faf7fe",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Edit rule",
+   "reportId": "74ac1536-9aa7-4562-b19c-6d58871a4cb9",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Named by what it does when left empty",
+   "reportId": "584a05e9-382c-4658-98e3-624005f9d52f",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Fill in at least one. A rule acts only on new mail.",
+   "reportId": "91534019-a5b4-4ea7-8607-612c9081b39d",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "The subject contains",
+   "reportId": "ab158412-4861-44c2-8384-4f014fa8bbf3",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "The message is about…",
+   "reportId": "39fa4cb1-d789-4085-bbcf-561a64cc782f",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "A model reads the message and decides whether it fits.",
+   "reportId": "e495b6aa-7b62-4639-9fa4-696f5c58ea69",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Do",
+   "reportId": "d94e3314-51e2-4299-9722-3298fff79605",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Forward to…",
+   "reportId": "d9686fec-0382-4b07-a70e-d5b4d1281023",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "More",
+   "reportId": "7d3967af-5675-4303-9027-3ac53a7595d2",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Call a tool",
+   "reportId": "4b0c4cc9-12e3-4fde-80f1-37fa9166bd80",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Sends the message's details to a tool on another service, for example to open a ticket.",
+   "reportId": "454ba9ff-ee82-4ed7-ab1d-f30761f49707",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Tool server",
+   "reportId": "f90f6c36-08ae-4df5-a758-11ed6c6e6c00",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Tool",
+   "reportId": "d713bafa-a142-491c-b45f-b2d54e367d0d",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Arguments",
+   "reportId": "519deed9-bb66-449b-b7e4-b4633239e63c",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Credential (optional)",
+   "reportId": "331774cc-31ee-4e0e-83b4-e3cf3ad2520e",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "The name of a key stored on your server for this tool.",
+   "reportId": "f702eb44-a8fc-4bea-8753-ea6b7d5ceec2",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "How",
+   "reportId": "bb1f31c9-e848-4350-91a1-30533dfbf65c",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Ask me before each action",
+   "reportId": "3db89198-32a0-42c8-93a7-e3a110bb1928",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Act on its own",
+   "reportId": "f1c941e6-3fcf-4d5f-a038-fc99559906ae",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "At most this many actions a day",
+   "reportId": "d5f8a9c1-46c8-40d7-ab73-449fa480cc96",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Test run",
+   "reportId": "51138ff3-25ad-4728-bc84-4fc61152d8f7",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Try it on",
+   "reportId": "7d8d6daf-ccc5-4807-8693-65b55cb44500",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "No mail here yet to try the rule on.",
+   "reportId": "86688850-6ea5-411d-8164-13585e72bc38",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "A test run acts on nothing: no message is sent, moved or changed.",
+   "reportId": "2df7023e-7448-4249-9cb8-17faa2ab5c0b",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Nothing was changed.",
+   "reportId": "19f19376-23d0-4ab8-9b48-a7b58284f591",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "The draft it would prepare:",
+   "reportId": "0ba87a8f-4ef6-4ebc-8a6f-872a46da33a9",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "The test run failed: {reason}",
+   "reportId": "7c2c83a6-79b9-402c-b10e-54066f827944",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "The tool's arguments are not valid JSON.",
+   "reportId": "d0309ddc-3dea-4995-9969-aabc5e4c22d1",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Turn on",
+   "reportId": "fa14dd84-7c6c-4a89-ac4c-e70edf428cd5",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Save and pause",
+   "reportId": "37316f8a-3c57-44b0-92b6-aa39a229393b",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Save without turning on",
+   "reportId": "b7e94d8e-d63c-4f61-8a61-314fc748b374",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Fill in at least one condition under When.",
+   "reportId": "ed8632df-9981-430b-80cf-07d9b339d39a",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Test-run it on a message first, so you see what it will do.",
+   "reportId": "9b7c093c-70ea-4c2f-9a6f-ea111805901e",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "The rule was not saved: {reason}",
+   "reportId": "41db7a51-151a-44c4-8278-cabf484fc752",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Waiting in line",
+   "reportId": "44b7ddf0-4bf6-4de1-be11-9cf7d0ef52f8",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Waiting for your device",
+   "reportId": "bd75046e-2fda-4be8-8ff4-56503049bccd",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Skipped: it did not match",
+   "reportId": "f87f8347-e30b-4371-b5d9-563d555f184f",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Skipped: {reason}",
+   "reportId": "31ffc772-568e-4591-99fb-e04833db8e81",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Failed: {reason}",
+   "reportId": "95eac0e1-044f-4e06-a7ec-8badca50ee2b",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Not sure it happened",
+   "reportId": "eb1be88a-ac20-4f55-b68f-a103245a967d",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Cancelled",
+   "reportId": "ee16ce06-8a31-4a0e-ae45-72613b0b29e0",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "History could not load: {reason}",
+   "reportId": "c6853f46-97ed-4e3a-8635-926c78cb3620",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Nothing yet. When a turned-on rule matches new mail, it shows here.",
+   "reportId": "906097d7-399c-4f45-8e99-dd5667730b79",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Find it in mail",
+   "reportId": "18ebaa2a-eca0-4da4-acbd-fee36168ea88",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Rule version {version}",
+   "reportId": "1059666b-e9a0-4c4a-bcf5-39084a2634e7",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Run {id}",
+   "reportId": "2534a56b-20ef-4cbf-b67b-7e4c6a603643",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Message {id}",
+   "reportId": "35e5b297-4be5-4e61-b2c0-5adc2328a966",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Waiting to be sent",
+   "reportId": "626de470-559a-4a13-8fca-7dfb63c3fc2b",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Handed to the mail provider",
+   "reportId": "90858143-2f9f-4696-aefa-40d609bed3e9",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Not sure it was sent",
+   "reportId": "ba0cf610-9246-480c-a529-fefc8e68089b",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "“Handed to the mail provider” means the provider took the message; whether it reached the person is not known.",
+   "reportId": "c785e6bf-0cd2-4f42-8100-f51d49528637",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "What is being sent could not load.",
+   "reportId": "e9f5d76d-d858-47fb-a062-433c2ec556e7",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "When any new mail arrives",
+   "reportId": "288abe67-2cf1-48ab-a076-73eed30ed10b",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "When mail arrives from {from}",
+   "reportId": "74f3ffed-237f-4b8e-a685-72a7c23c0ed6",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "When mail arrives with {subject} in the subject",
+   "reportId": "84a17752-4871-479c-9b1c-ce0a172e731c",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "When mail arrives that is about {about}",
+   "reportId": "83d9d06f-3693-482a-b0ed-90bfb078e4fd",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "When mail arrives from {from} with {subject} in the subject",
+   "reportId": "62b3f0d4-e306-4f25-bf96-3f46f7cafa5b",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "When mail arrives from {from} and is about {about}",
+   "reportId": "1a3320bb-bb1a-42ea-ada3-6571c7f5a0e3",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "When mail arrives with {subject} in the subject and is about {about}",
+   "reportId": "71e32a89-fe28-434c-b3e1-764aac0bc358",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "When mail arrives from {from} with {subject} in the subject and is about {about}",
+   "reportId": "38d6ab50-6fcd-4142-8516-6e87727eb1e2",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "archive it",
+   "reportId": "a25b9d49-4537-45df-a6ea-c168ee4fda2a",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "mark it as read",
+   "reportId": "ab65bbc6-9d17-458b-bb71-3c231bb4d630",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "prepare a reply draft",
+   "reportId": "ec290b44-7b7e-4b11-9ead-e683bcb494a2",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "forward it to {to}",
+   "reportId": "71174ea5-27b9-40a0-bde1-86c799eff27e",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "forward it (no address yet)",
+   "reportId": "f4d67f59-5830-4bf5-be38-936d67cd5572",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "call {tool} on {host}",
+   "reportId": "941f4e70-b2a6-4e2f-b952-d5079718ff63",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "call a tool (not chosen yet)",
+   "reportId": "8720e9ac-d603-4d0c-8fbe-ca9a1f58faf7",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Asks you first.",
+   "reportId": "3a1c7e42-94fc-4c12-bd34-fb279d71d9c5",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Acts on its own.",
+   "reportId": "a6d5e6b5-f220-4761-9362-6c77427b84a8",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Up to {n} a day.",
+   "reportId": "a5fd435d-4f1f-48c9-8dca-b44d39d3c67a",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Would archive it.",
+   "reportId": "e4804069-86da-4f1c-8069-74d6290dce9e",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Would mark it as read.",
+   "reportId": "8618036f-40c3-4058-b847-8665fe4e0e02",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Would prepare a reply draft.",
+   "reportId": "a9c86e42-a160-496b-954c-650ab063efaa",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Would forward it to {to}.",
+   "reportId": "eb8995d0-132d-439f-8027-b971cc6887c2",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Would call {tool} on {host}.",
+   "reportId": "45c4863e-901e-4b5b-a774-48466f7c9b84",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Would act on it.",
+   "reportId": "315cf087-9d48-4a90-bea5-1451d43e3a1f",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Would not act: {reason}",
+   "reportId": "be277a4c-30d4-4c6a-8ab5-6d91e016e153",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "the sender is not {from}",
+   "reportId": "a58a14d5-decc-413f-b636-3e8c1eba1048",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "the subject does not contain “{subject}”",
+   "reportId": "e92321f2-b2a3-4740-8ca6-fcff6f128ba9",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "it is not about “{about}”",
+   "reportId": "5dd7bb47-0729-4cbf-963e-620f735a252f",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "it does not match the conditions",
+   "reportId": "5bac4d19-a192-47a4-86fe-6dfec2a8f479",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Rules for this address",
+   "reportId": "f0f3d222-24c7-46be-8f1e-3b4854c94da0",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Its forwarding in Cloudflare is removed too. This cannot be undone.",
+   "reportId": "5a73bdf4-bf8c-4b6f-9bb7-dd995e558d8c",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "en-US",
+   "text": "Rules act on new mail to {email}: they can archive, mark as read, prepare a reply draft, forward or call a tool, after approval or by themselves. Every run is kept with what it did.",
+   "reportId": "ec2b97ca-64cd-4334-8f85-622ab0a25c1b",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Правила для {name}",
+   "reportId": "25e56dbb-d82b-42b5-b39d-3087a6697ddf",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Адрес Cloudflare",
+   "reportId": "2571b157-7706-4f43-a0a1-b7cd45cb65c6",
+   "findings": [
+    "script-mismatch:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Аккаунт Gmail",
+   "reportId": "bcd8f3b1-0867-42f7-8680-b9c7a6eb33d0",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Аккаунт Outlook",
+   "reportId": "521475ce-6c31-4937-b2e6-29af3026e508",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Аккаунт IMAP",
+   "reportId": "78e37658-cfab-4725-b715-a11042ab9737",
+   "findings": [
+    "ru-allcaps:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Назад к настройкам",
+   "reportId": "faa5405f-35a3-4617-b361-e520ef9442cf",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "История",
+   "reportId": "8037aacf-9532-4578-8f6a-2778193c8f14",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "{n} ждёт вас",
+   "reportId": "dace865a-44b7-4375-9b45-0f0daac777f8",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "{n} ждут вас",
+   "reportId": "a5ab7185-fad8-4fb7-a590-815901f21875",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Загружаем правила…",
+   "reportId": "fd497e3f-8ba8-49cb-9825-45661f4b25a0",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Не удалось загрузить правила: {reason}",
+   "reportId": "d88c6efb-809e-4c91-b7db-e17f9901ed1b",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Правило действует на новые письма, которые приходят сюда.",
+   "reportId": "d0f18a46-94f4-4560-b3e4-f064ede5171c",
+   "findings": [
+    "ru-ui-trailing-period:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Начните с одного из вариантов или с чистого листа:",
+   "reportId": "f796a37c-5f6a-40a2-9c19-fce55db6503a",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Архивировать рассылки от отправителя",
+   "reportId": "865cc5fe-3bbf-4887-9b1e-384e5510e1c5",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Готовить черновик ответа, когда клиент о чём-то спрашивает",
+   "reportId": "7c1505ab-4e3f-4053-89b2-9d806265d9d3",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Пересылать счета на другой адрес",
+   "reportId": "60bcbef9-3c0e-4883-aa4b-9331f3a27788",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Вопросы клиентов",
+   "reportId": "a6ba38ef-b143-4307-9634-a7c06b42ed7e",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "клиент задаёт вопрос о нашем продукте",
+   "reportId": "dd0bdc16-1ea0-489a-98d7-226bf0d496c4",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Счета",
+   "reportId": "bfa23629-87e2-4373-bdd6-91890302ca10",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "счёт",
+   "reportId": "c8de21d5-ec2f-4f99-869a-77239e7fb9dd",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "На паузе",
+   "reportId": "0cfe5617-dd20-4808-a80d-153bb8ca8bc1",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Включено",
+   "reportId": "14cd36b4-e6b8-486f-95a6-8642a9d261c8",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Выключено",
+   "reportId": "f641b424-e4f3-400d-9aaf-fe87377332ac",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Включено: {name}",
+   "reportId": "20e9a361-b102-4b15-9f9f-80c38b21d1cb",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Изменение не сохранено: {reason}",
+   "reportId": "118d4508-eb9c-4de6-822e-22d6e66c528b",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Изменить правило",
+   "reportId": "316ff98e-4bf8-4b58-bfa4-9935d376da28",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Если оставить пустым, название возьмётся из того, что правило делает",
+   "reportId": "fc6ea8e5-21f2-497f-ad8a-286e96093880",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Заполните хотя бы одно поле. Правило действует только на новые письма.",
+   "reportId": "81c215ce-96c4-4210-a642-e2a775a2be7d",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Тема содержит",
+   "reportId": "90d997d2-db69-4bac-bb63-e248aabe9400",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Письмо о том, что…",
+   "reportId": "fff94667-ccd5-473e-8d15-ec11b6e9042b",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Модель прочитает письмо и решит, подходит ли оно.",
+   "reportId": "cf21bca3-5f4c-44d0-ad9c-ce85460f1a38",
+   "findings": [
+    "ru-ui-trailing-period:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Сделать",
+   "reportId": "9f1ba4d7-110a-44ed-a4e5-bc5677889889",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Переслать на…",
+   "reportId": "02c62bfa-d4dd-49f7-b0ee-ece208ac05f8",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Ещё",
+   "reportId": "d2bc2080-5f64-43c9-8498-c87146a2a3d5",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Вызвать инструмент",
+   "reportId": "3ee5e283-9915-4c9d-ae0d-39102b04fd9b",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Передаёт данные письма инструменту другого сервиса, например чтобы создать заявку.",
+   "reportId": "a747fbad-4fad-4bb1-a193-f852f2f74b72",
+   "findings": [
+    "ru-ui-trailing-period:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Сервер инструмента",
+   "reportId": "9355226f-1ded-422e-b346-0483f44e019f",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Инструмент",
+   "reportId": "0d037dde-db53-49c4-be24-410bb1b46f58",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Аргументы",
+   "reportId": "f8dd2bd4-75b3-46a8-a9ab-c9431b17c0cc",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Ключ (необязательно)",
+   "reportId": "e081f441-b734-41ca-85a7-65b3c966cee2",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Название ключа для этого инструмента, сохранённого на вашем сервере.",
+   "reportId": "b606245c-9762-4f88-b300-67e5c89543da",
+   "findings": [
+    "ru-ui-trailing-period:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Как",
+   "reportId": "1b23a427-f6da-4ce1-91d0-8e652fca9004",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Спрашивать меня перед каждым действием",
+   "reportId": "8843bc64-02ab-4e63-95d2-63868034b8ea",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Действовать самостоятельно",
+   "reportId": "4eec023a-1024-4f43-9295-4f7498a50aed",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Максимум действий в день",
+   "reportId": "91a285a4-fc53-4cc7-93fd-69973134addd",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Пробный запуск",
+   "reportId": "a2819a79-76e2-4cbf-8f56-48cfc8c21e69",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Проверить на письме",
+   "reportId": "7ef26751-69fc-42de-823a-29905964099d",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Здесь пока нет писем, на которых можно проверить правило.",
+   "reportId": "46f9811b-15c6-4153-9ebf-fe0f39d7e492",
+   "findings": [
+    "ru-ui-trailing-period:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Пробный запуск ничего не делает: письма не отправляются, не перемещаются и не меняются.",
+   "reportId": "0011b3c5-ff89-415e-80c1-689e979c9eca",
+   "findings": [
+    "ru-ui-trailing-period:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Ничего не изменилось.",
+   "reportId": "3900d724-4e91-4e19-98fd-82bd77357a1b",
+   "findings": [
+    "ru-ui-trailing-period:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Черновик, который подготовило бы правило:",
+   "reportId": "7d364757-32c1-4c60-853c-abf282344e2f",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Пробный запуск не удался: {reason}",
+   "reportId": "3547044d-c060-43d9-92b0-bc7744dda09b",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Аргументы инструмента не являются корректным JSON.",
+   "reportId": "79f38017-0f05-4a33-9949-9cc978bb4cec",
+   "findings": [
+    "ru-ui-trailing-period:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Включить",
+   "reportId": "76da176d-32b8-4061-a4bc-cef7b5bf68be",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Сохранить и поставить на паузу",
+   "reportId": "73e0473e-9986-4862-8f27-a81554ec220c",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Сохранить, не включая",
+   "reportId": "93a4a7a0-a769-4e81-abf1-36c956b375ee",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Заполните хотя бы одно условие в шаге «Когда».",
+   "reportId": "92a76ef6-0ea9-4035-9051-d4797b83e707",
+   "findings": [
+    "ru-ui-trailing-period:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Сначала сделайте пробный запуск на письме, чтобы увидеть, что правило будет делать.",
+   "reportId": "eebf5f11-3d91-49d9-a144-5c1a7a3a579f",
+   "findings": [
+    "ru-ui-trailing-period:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Правило не сохранено: {reason}",
+   "reportId": "23cc7d26-1dce-4f71-b512-f14f07016b6a",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "В очереди",
+   "reportId": "340c171b-1b14-40eb-b1db-d71fbe88a3f1",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Ждёт ваше устройство",
+   "reportId": "347e1a56-96bf-4d32-8e2e-527f24bfa2c4",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Пропущено: письмо не подошло",
+   "reportId": "2c0e9a1e-060c-48fc-a2b2-4a9ead4953ea",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Пропущено: {reason}",
+   "reportId": "789d3b38-f4da-4f7a-a8fc-645cd54a7f00",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Не выполнено: {reason}",
+   "reportId": "676fc5e8-d852-430a-a12f-8f9660e30f37",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Неизвестно, выполнено ли",
+   "reportId": "e8f23314-bd38-453c-8db0-40dcb7abbf1b",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Отменено",
+   "reportId": "ddcdbba0-8e87-4868-9d8b-1f16215073e6",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Не удалось загрузить историю: {reason}",
+   "reportId": "dc729b66-4a72-4a21-90db-b25c42bca728",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Пока ничего. Когда включённое правило сработает на новом письме, это появится здесь.",
+   "reportId": "3821434b-4473-4b4d-b6a6-395739e395ef",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Найти в почте",
+   "reportId": "adf170a9-acd6-47cf-a99e-7496831f8973",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Версия правила: {version}",
+   "reportId": "9a4f1ca2-71d2-4adf-8ccc-3c2513da05ac",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Запуск {id}",
+   "reportId": "8c2f81d6-29bd-4cb2-9613-0710a426733d",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Письмо {id}",
+   "reportId": "c7349e9b-0f3e-4493-9bef-417f1ec3d83e",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Ждёт отправки",
+   "reportId": "5ebf6cd3-3b36-4c4c-a17e-f8bc8190ea94",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Передано почтовому провайдеру",
+   "reportId": "6d7b4460-721a-42fc-b2ef-615d1059a6e2",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Неизвестно, отправлено ли",
+   "reportId": "0ff089f2-521b-4467-99c1-26ddd124cfcc",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "«Передано почтовому провайдеру» значит, что провайдер принял письмо; дошло ли оно до получателя, неизвестно.",
+   "reportId": "5003fb72-f41e-404a-9c18-dbef66b252c0",
+   "findings": [
+    "ru-ui-trailing-period:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Не удалось загрузить список отправки.",
+   "reportId": "86dbf839-744c-4b56-88af-7643734a4055",
+   "findings": [
+    "ru-ui-trailing-period:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Когда приходит любое новое письмо",
+   "reportId": "0c248ef2-4139-4e62-8db5-f9e142dfe5a5",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Когда приходит письмо от {from}",
+   "reportId": "82352f99-64de-457e-a632-bd2d4f998bf1",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Когда приходит письмо с {subject} в теме",
+   "reportId": "2dd004e3-2ae3-432f-be33-966242a30f0d",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Когда приходит письмо о том, что {about}",
+   "reportId": "1634e1f0-416f-4a89-a738-cec48b46b164",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Когда приходит письмо от {from} с {subject} в теме",
+   "reportId": "71ab5f3a-217f-42ba-8ecb-b7d68364c3a5",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Когда приходит письмо от {from}, и оно о том, что {about}",
+   "reportId": "4f422a8e-e449-4988-b317-9e94ee9a0821",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Когда приходит письмо с {subject} в теме, и оно о том, что {about}",
+   "reportId": "54744cb4-6f6e-4b06-bc7c-78d738caa3e1",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Когда приходит письмо от {from} с {subject} в теме, и оно о том, что {about}",
+   "reportId": "6c62f0a5-8f8a-464e-8aa8-93a843d31344",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "архивировать его",
+   "reportId": "1face4fb-cb95-4b4d-a27e-3f0feabf05eb",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "отметить его прочитанным",
+   "reportId": "c1edc3d5-eb5c-4e58-a232-5de479c1dfeb",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "подготовить черновик ответа",
+   "reportId": "0f40d652-100b-4562-8b78-f6894b04d3ab",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "переслать его на {to}",
+   "reportId": "d8c237d2-4562-4d3d-b10a-a169f7bcc2b1",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "переслать его (адрес пока не указан)",
+   "reportId": "6058fc97-97d0-4a49-8583-6710900c7b71",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "вызвать {tool} на {host}",
+   "reportId": "2e815476-3522-4bc3-9d79-b29212335a53",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "вызвать инструмент (пока не выбран)",
+   "reportId": "18caa1ce-e04f-4ff9-bd72-2b380184f632",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Сначала спрашивает вас.",
+   "reportId": "8c03bbd5-9989-41a1-8fde-5ff29742623d",
+   "findings": [
+    "ru-ui-trailing-period:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Действует само.",
+   "reportId": "184207d1-c696-40f0-828c-661820b9dcac",
+   "findings": [
+    "ru-ui-trailing-period:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Не больше {n} в день.",
+   "reportId": "045302ca-f13c-472d-bc95-a70dbdda313e",
+   "findings": [
+    "ru-ui-trailing-period:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Правило архивировало бы письмо.",
+   "reportId": "c9b8d48a-f2c1-421e-8319-046bdeb16b97",
+   "findings": [
+    "ru-ui-trailing-period:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Правило отметило бы письмо прочитанным.",
+   "reportId": "b5307285-4635-4cee-a796-75150a803624",
+   "findings": [
+    "ru-ui-trailing-period:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Правило подготовило бы черновик ответа.",
+   "reportId": "38298cfe-d7d2-45d5-9ac6-c257e9a4175c",
+   "findings": [
+    "ru-ui-trailing-period:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Правило переслало бы письмо на {to}.",
+   "reportId": "2e9ad0af-e1a4-4dc8-b098-72a7e7ddeb0b",
+   "findings": [
+    "ru-ui-trailing-period:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Правило вызвало бы {tool} на {host}.",
+   "reportId": "4fc11f0e-c9f0-417a-8eda-2875189b3ae5",
+   "findings": [
+    "ru-ui-trailing-period:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Правило сработало бы на этом письме.",
+   "reportId": "8936af96-807d-4aaf-a594-687417a2bb0c",
+   "findings": [
+    "ru-ui-trailing-period:suggestion"
+   ],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Правило не сработало бы: {reason}",
+   "reportId": "aece6480-b68b-4ef8-912d-1101a7fd72a8",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "отправитель не {from}",
+   "reportId": "abfcf29f-7447-45ce-a539-15832694898c",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "в теме нет «{subject}»",
+   "reportId": "ffba905a-0b01-4280-bade-8b62e6de42ad",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "письмо не подходит под условие «{about}»",
+   "reportId": "2630889d-9626-4e35-9812-40ff9fc99071",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "письмо не подходит под условия",
+   "reportId": "6a600c92-2be0-4a5d-92c6-a75307fd2190",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Правила для этого адреса",
+   "reportId": "558275d3-a99f-4799-ae57-6a7c0c75aff4",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Пересылка в Cloudflare тоже будет удалена. Отменить это нельзя.",
+   "reportId": "0b63047f-c219-40b0-bafb-b4e0fb9f0bc8",
+   "findings": [],
+   "blocking": []
+  },
+  {
+   "locale": "ru-RU",
+   "text": "Правила обрабатывают новую почту на {email}: архивируют, отмечают прочитанным, готовят черновик ответа, пересылают или вызывают инструмент, с вашего одобрения или сами. Каждый запуск сохраняется вместе с результатом.",
+   "reportId": "b62ccdd7-5c96-495a-9c6b-1e01e631e8d6",
+   "findings": [],
+   "blocking": []
+  }
+ ]
+}
