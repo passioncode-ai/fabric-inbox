@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { answeredRows, foldQuotedHtml, isNested, QUOTE_SELECTORS, splitQuotedText } from "../app/components/inbox/quotes";
+import { answeredRows, foldQuotedHtml, isNested, nestedRows, QUOTE_SELECTORS, splitQuotedText } from "../app/components/inbox/quotes";
 
 test("a text reply folds from its English or Russian attribution line", () => {
   const en = splitQuotedText("Thanks, that works.\n\nOn Mon, 10 Nov 2026 at 10:00, Maya Chen <maya@acme.example> wrote:\n> Can we move it?\n> Maya");
@@ -45,6 +45,22 @@ test("each reply finds the message it answers by In-Reply-To, then References; a
   const answered = answeredRows(rows);
   assert.deepEqual(answered, [-1, 0, 1, 0, -2, 2]);
   assert.deepEqual(answered.map((a, i) => isNested(a, i)), [false, false, false, true, false, true]);
+});
+
+test("A-16: a reply to the cell right above an agent's draft card is not nested; one to an earlier cell still is", () => {
+  // Ana's message, the agent's draft answering it (drawn as a card under Ana's cell), then a reply to Ana.
+  const rows = [
+    { internalId: "c1", rfcMessageId: "<a@acme.example>" },
+    { internalId: "d1", inReplyTo: "c1", draft: true },
+    { internalId: "c2", rfcMessageId: "<b@owner.example>", inReplyTo: "<a@acme.example>" },
+    { internalId: "c3", rfcMessageId: "<c@acme.example>", inReplyTo: "<b@owner.example>" },
+    { internalId: "c4", rfcMessageId: "<d@acme.example>", inReplyTo: "<a@acme.example>" },
+  ];
+  const answered = answeredRows(rows);
+  assert.deepEqual(answered, [-1, 0, 0, 2, 0]);
+  const card = new Set([1]);
+  assert.deepEqual(nestedRows(answered, (i) => !card.has(i)), [false, false, false, false, true]);
+  assert.deepEqual(nestedRows(answered, () => true), answered.map((a, i) => isNested(a, i)), "with every row a cell, the old rule");
 });
 
 test("the conversation shows what a reply answered, nested, with a disclosure and Go to message", () => {

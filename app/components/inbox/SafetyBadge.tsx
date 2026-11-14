@@ -1,21 +1,28 @@
-import { useState } from "react";
-import { ShieldCheckIcon, ShieldWarningIcon, ShieldSlashIcon, ShieldIcon } from "@phosphor-icons/react";
+import { CheckIcon, ShieldCheckIcon, ShieldWarningIcon, ShieldSlashIcon, ShieldIcon, WarningIcon } from "@phosphor-icons/react";
 import { useT } from "~/lib/i18n";
 import { CHECKS, type CheckName, type FileEntry, type SafetyColour, type SafetyLikeRecord } from "../../../shared/mail/safety";
 import { badgeWords, fileWords, notRunWords, reviewNotRunWords, reviewWords, showsOkLine, signalWords } from "./safety-words";
 
 /**
  * S03 (B-269, B-222): the Okolos badge at the right of the subject line, and its panel. The badge is a button with
- * `aria-expanded`; its colour is never the only signal (an icon and a word each). The panel opens under the header
- * and says what was checked, each file, what did not run and why, the review's codes and quotes, first steps for
- * amber and red, and one line about Okolos. Nothing here is drawn inside the message text.
+ * `aria-expanded`; its colour is never the only signal (an icon and a word each). The panel opens under the header,
+ * the header's full width (A-2: the reader draws `SafetyPanel` after the people, never beside the subject), and says
+ * what was checked, each file, what did not run and why, the review's codes and quotes, first steps for amber and red,
+ * and one line about Okolos. Nothing here is drawn inside the message text.
  */
 export interface SafetyBadgeProps {
+  colour: SafetyColour;
+  checking?: boolean;
+  /** The panel is open (the reader holds it, so the panel can sit under the header). */
+  open: boolean;
+  onToggle: () => void;
+}
+
+export interface SafetyPanelProps {
   colour: SafetyColour;
   record: (SafetyLikeRecord & { checkedAt?: number }) | null;
   /** The record could not be read, or the open-time check failed. */
   failed?: boolean;
-  checking?: boolean;
   onReportSpam?: () => void;
   onDiscard?: () => void;
   onSaveAnyway?: (file: FileEntry) => void;
@@ -24,10 +31,26 @@ export interface SafetyBadgeProps {
 const ICONS = { green: ShieldCheckIcon, grey: ShieldIcon, amber: ShieldWarningIcon, red: ShieldSlashIcon } as const;
 const CHECK_NAMES: CheckName[] = [...CHECKS];
 
-export default function SafetyBadge({ colour, record, failed, checking, onReportSpam, onDiscard, onSaveAnyway }: SafetyBadgeProps) {
+export default function SafetyBadge({ colour, checking, open, onToggle }: SafetyBadgeProps) {
   const t = useT();
-  const [open, setOpen] = useState(false);
   const Icon = ICONS[colour.colour];
+  const label = badgeWords(colour.label, t);
+  const released = colour.released === "person" ? t("Released by you") : colour.released === "review" ? t("Released by the review") : "";
+  return (
+    <div className={`fi-okolos is-${colour.colour}`}>
+      <button type="button" className="fi-okolos-badge" aria-expanded={open} aria-controls="fi-okolos-panel" onClick={onToggle}
+        title={t("What Okolos checked in this message")}>
+        <Icon size={15} weight="bold" aria-hidden="true" />
+        <span>{checking ? t("Checking…") : label}</span>
+        {/* A-18: the release note sits apart from the badge's word, after a separator. */}
+        {released && <span className="fi-okolos-released"><span aria-hidden="true">·</span> {released}</span>}
+      </button>
+    </div>
+  );
+}
+
+export function SafetyPanel({ colour, record, failed, onReportSpam, onDiscard, onSaveAnyway }: SafetyPanelProps) {
+  const t = useT();
   const check = record?.findings.check;
   const fired = (name: CheckName) => check?.signals.filter((s) => s.check === name) ?? [];
   const skipped = (name: CheckName) => check?.notRun.filter((n) => n.check === name) ?? [];
@@ -41,18 +64,8 @@ export default function SafetyBadge({ colour, record, failed, checking, onReport
       case "attachments": return check?.files.length ? t("Files: {n} checked by what they are.", { n: check.files.length }) : t("No attached files.");
     }
   };
-  const label = badgeWords(colour.label, t);
-  const released = colour.released === "person" ? t("Released by you") : colour.released === "review" ? t("Released by the review") : "";
   return (
-    <div className={`fi-okolos is-${colour.colour}`}>
-      <button type="button" className="fi-okolos-badge" aria-expanded={open} aria-controls="fi-okolos-panel" onClick={() => setOpen((v) => !v)}
-        title={t("What Okolos checked in this message")}>
-        <Icon size={15} weight="bold" aria-hidden="true" />
-        <span>{checking ? t("Checking…") : label}</span>
-        {released && <span className="fi-okolos-released">{released}</span>}
-      </button>
-      {open && (
-        <section id="fi-okolos-panel" className="fi-okolos-panel" aria-label={t("Safety check")}>
+        <section id="fi-okolos-panel" className={`fi-okolos-panel is-${colour.colour}`} aria-label={t("Safety check")}>
           {failed && <p role="alert">{t("The safety check could not load. Links ask before they open.")}</p>}
           {!check && !failed && <p>{t("This message has no safety record yet, so its links ask before they open.")}</p>}
           {check && (
@@ -61,10 +74,10 @@ export default function SafetyBadge({ colour, record, failed, checking, onReport
               <ul className="fi-okolos-lines">
                 {CHECK_NAMES.filter((name) => !skipped(name).some((s) => s.why === "inboxNotReceived")).map((name) => {
                   const signals = fired(name).map((s) => signalWords(s, t)).filter(Boolean);
-                  if (name === "attachments") return signals.length ? signals.map((w, i) => <li key={`${name}-${i}`} className="is-fired">{w}</li>) : null;
-                  if (signals.length) return signals.map((w, i) => <li key={`${name}-${i}`} className="is-fired">{w}</li>);
+                  if (name === "attachments") return signals.length ? signals.map((w, i) => <li key={`${name}-${i}`} className="is-fired"><Fired />{w}</li>) : null;
+                  if (signals.length) return signals.map((w, i) => <li key={`${name}-${i}`} className="is-fired"><Fired />{w}</li>);
                   if (!showsOkLine(name, check, colour.linksComplete)) return null;
-                  return <li key={name}>{okLine(name)}</li>;
+                  return <li key={name} className="is-clean"><CheckIcon size={13} weight="bold" aria-hidden="true" className="fi-okolos-mark" />{okLine(name)}</li>;
                 })}
               </ul>
               {!!check.files.length && (
@@ -124,7 +137,10 @@ export default function SafetyBadge({ colour, record, failed, checking, onReport
           <p className="fi-okolos-note">{t("No antivirus engine runs on this server; files are checked by what they are, not against virus signatures.")}</p>
           <p className="fi-okolos-note">{t("Okolos never draws inside the message text: a badge there is part of the message, not a check.")}</p>
         </section>
-      )}
-    </div>
   );
+}
+
+/** A-17: a line that fired carries a warning mark, a clean one a check; the words already say which. */
+function Fired() {
+  return <WarningIcon size={13} weight="bold" aria-hidden="true" className="fi-okolos-mark" />;
 }

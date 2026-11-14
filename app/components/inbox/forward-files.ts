@@ -2,12 +2,33 @@
  * A forward's original files (B-274, S09): attached by themselves as the composer opens, in the
  * original's order, while they fit in one message; each removable. What is not attached on purpose
  * is the draft's `leftOut`: removed by the person, past the 10 files and 5 MiB one message carries,
- * or found dangerous by the safety check (a red file is never attached by itself).
+ * found dangerous by the safety check (a red file is never attached by itself), or not read by a check that failed.
  */
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "../../../shared/mail/attachments";
-import type { Draft, ForwardSource, LeftOut } from "./draft-store";
+import type { Draft, FileSafety, ForwardSource, LeftOut } from "./draft-store";
 
 export type Original = ForwardSource["files"][number];
+
+/**
+ * A-1 (S03, S09): the original's files as a forward carries them, each with the safety colour the check gave it by
+ * attachment id; a file the check named nothing about is grey ("Not checked"). Without a colour a red file would be
+ * attached by itself, so the reader passes the record it has. `failed` (K-1 of the F1 review): the server checks mail
+ * but this message's check could not be read; a file it named nothing about is then `unchecked` and waits for
+ * "Attach anyway" instead of being attached by itself. A server that does not check mail (no `failed`) attaches them.
+ */
+export function originalsWithSafety(
+  attachments: readonly { id: string; filename: string; mimeType: string; size: number }[],
+  colours: ReadonlyMap<string, { colour: FileSafety }>,
+  { failed = false }: { failed?: boolean } = {},
+): Original[] {
+  return attachments.map((a) => {
+    const colour = colours.get(a.id)?.colour;
+    return {
+      id: a.id, filename: a.filename, mimeType: a.mimeType, size: a.size, safety: colour ?? "grey",
+      ...(failed && !colour ? { unchecked: true as const } : {}),
+    };
+  });
+}
 
 /** Original ids the draft already carries: on this device (loading, failed or ready) or saved with it on the server. */
 export function includedOriginalIds(d: Draft): Set<string> {
@@ -42,7 +63,7 @@ export function noRoom(d: Draft): boolean {
  * not carry and has not left out, in the original's order. With `ids`: those originals (to put a
  * left-out file back, or to retry one), whatever their `leftOut`. A file is attached when it fits in
  * the room left; one that does not is "no-room" and later smaller files may still fit. A red file is
- * "dangerous" unless `anyway`.
+ * "dangerous" and a file a failed check did not read is "unchecked", unless `anyway`.
  */
 export function planOriginals(
   d: Draft,
@@ -62,6 +83,10 @@ export function planOriginals(
     if (wanted ? !wanted.has(file.id) : skipped.has(file.id)) continue;
     if (file.safety === "red" && !anyway) {
       out.push({ id: file.id, why: "dangerous" });
+      continue;
+    }
+    if (file.unchecked && !anyway) {
+      out.push({ id: file.id, why: "unchecked" });
       continue;
     }
     if (room.files >= 1 && file.size <= room.bytes) {

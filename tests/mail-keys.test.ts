@@ -103,3 +103,19 @@ test("the workbench listens once on the window, gives the keyboard to an open di
   assert.match(readFileSync("desktop/menu.cjs", "utf8"), /label: t\('Retry connection'\), accelerator: 'CmdOrCtrl\+R'/);
   assert.doesNotMatch(readFileSync("desktop/main.cjs", "utf8") + readFileSync("desktop/menu.cjs", "utf8"), /CmdOrCtrl\+Shift\+N/);
 });
+
+test("A-3, A-4: a key on the server switch, the link notice or the safety panel acts only there", () => {
+  const inside = (selector: string) => ({ tagName: "BUTTON", closest: (s: string) => (s.split(",").map((x) => x.trim()).includes(selector) ? {} : null) });
+  for (const region of [".fi-server-switch", ".fi-link-notice", ".fi-okolos-panel"]) {
+    const target = inside(region);
+    assert.equal(mailKeyAction(key("ArrowDown", { target }), true), null, `${region}: Arrow Down does not open the next message`);
+    assert.equal(mailKeyAction(key("ArrowUp", { target }), true), null);
+    assert.equal(mailKeyAction(key("Escape", { target }), true), null, `${region}: Escape does not close the open message`);
+    assert.equal(mailKeyAction(key("Delete", { target }), true), null, `${region}: Delete does not archive`);
+    assert.equal(mailKeyAction(key("?", { target }), true), "help", "the help still answers");
+    assert.equal(mailKeyAction(key("n", { metaKey: true, shiftKey: true, target }), true), "refresh");
+  }
+  const row = { tagName: "BUTTON", closest: () => null };
+  assert.equal(mailKeyAction(key("ArrowDown", { target: row }), true), "next", "a message row keeps the list's keys");
+  assert.equal(mailKeyAction(key("Escape", { target: row }), true), "clear");
+});

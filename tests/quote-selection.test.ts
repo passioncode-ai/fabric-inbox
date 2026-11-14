@@ -14,6 +14,7 @@ import {
 	heldQuote,
 	MAX_QUOTE,
 	pageSelection,
+	quoteButtonPlace,
 	type HeldQuote,
 } from "../app/lib/quote-selection";
 import { createT } from "../shared/i18n";
@@ -232,4 +233,20 @@ test("the reader quotes the selection in Reply and Reply all, and says how on bo
 	assert.match(src, /<pre data-quote-key=\{selected\.id\}>/);
 	assert.match(src, /useEffect\(\(\) => dispatchQuote\(\{ type: "reset" \}\), \[selected\?\.id\]\);/);
 	assert.match(src, /t\("Reply with quote"\)/);
+});
+
+test("A-24: Reply with quote sits beside the selection's end, else above it, never on the line under it", () => {
+  const pane = { left: 100, top: 50, width: 800, scrollLeft: 0, scrollTop: 0 };
+  const line = { left: 200, top: 300, right: 400, bottom: 320 };
+  const beside = quoteButtonPlace(line, pane, { width: 180, height: 30 });
+  assert.deepEqual(beside, { left: 306, top: 245 }, "right of the last line, centred on it");
+  // A selection ending near the pane's right edge: just above the last line, clamped into the pane.
+  const atEdge = quoteButtonPlace({ left: 600, top: 300, right: 880, bottom: 320 }, pane, { width: 180, height: 30 });
+  assert.deepEqual(atEdge, { left: 600, top: 214 });
+  assert.ok(atEdge.top + 30 <= 300 - 50, "above the line, not on the text below it");
+  // At the very top of what is shown there is no room above: below the line, as before.
+  const top = quoteButtonPlace({ left: 600, top: 52, right: 880, bottom: 70 }, pane, { width: 180, height: 30 });
+  assert.equal(top.top, 70 - 50 + 6);
+  // Scrolled: positions are in the scroll area's own coordinates.
+  assert.equal(quoteButtonPlace(line, { ...pane, scrollTop: 400 }).top, 645);
 });

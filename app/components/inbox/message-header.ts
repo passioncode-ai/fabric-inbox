@@ -67,6 +67,8 @@ export interface HeaderFacts {
   replyTo: string | null;
   /** Received mail whose To and Cc do not name our address, from no list and not to a catch-all. */
   notAddressed: boolean;
+  /** "Received at <our address>": received mail whose To, Cc and Bcc do not name it. Never on mail we sent (A-8). */
+  receivedAt: boolean;
 }
 
 export function headerFacts(input: HeaderInput): HeaderFacts {
@@ -79,7 +81,8 @@ export function headerFacts(input: HeaderInput): HeaderFacts {
   const replyTo = replyAddresses.length && replyAddresses.some((a) => a !== from) ? (input.replyTo ?? "").trim() : null;
   const named = to.some((r) => r.you) || cc.some((r) => r.you);
   const notAddressed = !input.sent && !!own && !named && !input.listId?.trim() && !input.catchAll;
-  return { to, cc, bcc, replyTo, notAddressed };
+  const receivedAt = !input.sent && !!own && ![...to, ...cc, ...bcc].some((r) => r.you);
+  return { to, cc, bcc, replyTo, notAddressed, receivedAt };
 }
 
 /** How many recipients a list shows before "and N more". */
@@ -89,4 +92,17 @@ export const SHOWN_RECIPIENTS = 3;
 export function compactRecipients(facts: Pick<HeaderFacts, "to" | "cc" | "bcc">): { first: Recipient | null; more: number } {
   const all = [...facts.to, ...facts.cc, ...facts.bcc];
   return { first: all[0] ?? null, more: Math.max(0, all.length - 1) };
+}
+
+/**
+ * A-22 (S02): the date's relative time, shown on pointing ("3 hours ago", «3 часа назад»), in the reader's language
+ * through `Intl.RelativeTimeFormat`; a future date (a clock that is off) reads as now.
+ */
+export function relativeDate(date: Date, now: number, locale: string | undefined): string {
+  const seconds = Math.round((date.valueOf() - now) / 1000);
+  const past = Math.min(0, seconds);
+  const format = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [["year", 31_536_000], ["month", 2_592_000], ["week", 604_800], ["day", 86_400], ["hour", 3_600], ["minute", 60]];
+  for (const [unit, size] of units) if (Math.abs(past) >= size) return format.format(Math.round(past / size), unit);
+  return format.format(0, "second");
 }

@@ -1,7 +1,7 @@
 // S02 (B-268): the open message's header facts.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { addressOf, compactRecipients, headerFacts, splitAddresses } from "../app/components/inbox/message-header";
+import { addressOf, compactRecipients, headerFacts, splitAddresses, relativeDate } from "../app/components/inbox/message-header";
 
 describe("S02: who wrote a message and to whom", () => {
   it("splits an address list on commas between addresses, not inside a quoted name", () => {
@@ -46,5 +46,27 @@ describe("S02: who wrote a message and to whom", () => {
     const f = headerFacts({ from: "a@acme.example", to: "b@acme.example, c@acme.example", cc: "d@acme.example" });
     assert.deepEqual(compactRecipients(f), { first: f.to[0], more: 2 });
     assert.deepEqual(compactRecipients(headerFacts({ from: "a@acme.example", to: "" })), { first: null, more: 0 });
+  });
+});
+
+describe("A-8: Received at is never on mail we sent", () => {
+  it("received mail not naming our address says where it arrived; sent mail with Bcc does not", () => {
+    const received = headerFacts({ from: "ann@acme.example", to: "list@acme.example", own: "hello@owner.example" });
+    assert.equal(received.receivedAt, true);
+    const sent = headerFacts({ from: "hello@owner.example", to: "ann@acme.example", bcc: "bob@acme.example", own: "hello@owner.example", sent: true });
+    assert.equal(sent.receivedAt, false, "From already names our address");
+    assert.equal(sent.bcc.length, 1);
+    assert.equal(headerFacts({ from: "ann@acme.example", to: "hello@owner.example", own: "hello@owner.example" }).receivedAt, false);
+  });
+});
+
+describe("A-22: the date's relative time on pointing", () => {
+  const now = Date.parse("2026-11-14T12:00:00Z");
+  it("hours, days and minutes in the reader's language", () => {
+    assert.equal(relativeDate(new Date(now - 3 * 3600_000), now, "en-US"), "3 hours ago");
+    assert.equal(relativeDate(new Date(now - 86_400_000), now, "en-US"), "yesterday");
+    assert.equal(relativeDate(new Date(now - 5 * 60_000), now, "en-US"), "5 minutes ago");
+    assert.equal(relativeDate(new Date(now - 3 * 3600_000), now, "ru-RU"), "3 часа назад");
+    assert.equal(relativeDate(new Date(now + 60_000), now, "en-US"), "now", "a date ahead of the clock reads as now");
   });
 });
