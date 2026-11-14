@@ -5,7 +5,23 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
-## Unreleased
+## 1.7.0 (2026-11-14)
+
+**The mail window, reworked from the operator's notes** (plan `docs/ux/plans/2026-11-14-mail-window/`, S01 to S11; audit `docs/reports/2026-11-14-mail-window-audit/`). Every item below went through its own spec, a second-model review and a walk in WebKit.
+
+**One server switch above the mail list** (B-267, S01). The servers are one switch in the list's heading: segments for up to four servers in a list at least 360 px wide, a menu otherwise; counts read "N+" when the read was cut, a server's state (signed out, not reachable) sits in its own label, and All groups the mail by server. Basis: `tests/server-tabs-layout.test.ts`, `tests/desktop-all-servers.test.ts`.
+
+**The open message says who wrote it and to whom** (B-268, S02). From with its address, To with your address marked "you", Cc, the Bcc of mail you sent, Reply-To when it differs, the full date, and "Received at" when none of the named addresses is yours. Basis: `tests/message-header.test.ts`.
+
+**A conversation reads top to bottom** (B-221 in part, S05). Each cell says who wrote to whom; a reply to an earlier cell is nested under it with "In reply to" (it opens the answered lines) and "Go to message"; quoted history folds in every cell and in the open message; what a rule or the safety check did shows as a thin row. Basis: `tests/thread-quotes.test.ts`.
+
+**Select text, press Reply** (B-273, S08). Reply and Reply all start with the selected text quoted under "On {date}, {name} wrote:"; a "Reply with quote" button appears at the selection. The reader takes only a visible selection in its own message frame made by the person. Basis: `tests/quote-selection.test.ts`.
+
+**The rules screen made readable** (B-275, S10). One name, Rules, with the tabs Rules, History and Sending; each rule is a sentence card; the editor has four steps (When, Do, How, Test run) and Turn on stays locked until a test run, with its reason beside it; History is in words with Approve and Cancel. "Dry run" is now "Test run". Basis: `tests/rule-sentence.test.ts`, `tests/automation-ui.test.ts`.
+
+**Settings name their server and see the others** (B-276, S11). Settings say "Settings · <server>" and share the mail's server switch; All on Accounts, Addresses and Domains lists every held server's items, each read through that server's own session (`desktop/other-settings.cjs`). Basis: `tests/settings-servers.test.ts`, `tests/desktop-other-settings.test.ts`.
+
+**Fixes from the audit of the mail window** (A-1 to A-33, report `docs/reports/2026-11-14-mail-window-audit/`). A forward carries each file's safety colour, so a dangerous file is never attached by itself, and a file a check that could not be read named nothing about waits for "Attach anyway" too; the safety panel opens under the message header; list keys no longer act inside the server switch, the link notice and the safety panel; a mailto link says "This link writes to {address}"; the agent's draft card tells a discard from a retirement, scrolls into view and names the agent; the rules tabs follow the full keyboard pattern; Russian wording fixed where one English word had two meanings («Безопасность» and «Шифрование», «Перенести», «Архивировать»). Basis: `tests/thread-safety.test.ts`, `tests/safety-reader-ui.test.ts`, `tests/agent-draft-card-audit.test.ts`, `tests/tab-keys.test.ts`, `tests/i18n-context-words.test.ts`, `tests/attachment-composer.test.ts`.
 
 **Forward takes the original's files along** (B-274, S09; the operator, 2026-11-14: forwards should attach every file by themselves, each removable before sending). Forward attaches the original's files as it opens, in their order, and Send waits with "Attaching files…" until they are on the draft. Remove takes any of them off and the forward still sends (before, removing one refused the send); a file past 10 files or 5 MiB is listed as did not fit instead of making the forward impossible to send; a file whose loading failed has Retry and Remove; a file the safety check finds dangerous is left out until "Attach anyway", and so is a file a check that could not be read named nothing about. The original now shows after your text and before the files. Agents: `forward` takes `leaveOut`. Basis: `tests/attachment-composer.test.ts`, `tests/mcp-parity.test.ts`.
 

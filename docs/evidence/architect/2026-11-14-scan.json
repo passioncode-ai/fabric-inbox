@@ -1,0 +1,300 @@
+{
+ "src": "cf27cc9d62d7",
+ "commit": "c6cd542b",
+ "libraries": [
+  "agents",
+  "ai",
+  "blake3-wasm",
+  "cloudflare/ai-chat",
+  "cloudflare/kumo",
+  "cloudflare/vite-plugin",
+  "cloudflare/workers-types",
+  "dompurify",
+  "drizzle-orm",
+  "electron",
+  "electron-builder",
+  "electron/asar",
+  "electron/fuses",
+  "electron/osx-sign",
+  "electron/packager",
+  "esbuild",
+  "hono",
+  "imapflow",
+  "isbot",
+  "jose",
+  "miniflare",
+  "modelcontextprotocol/sdk",
+  "node-pty",
+  "openrouter/ai-sdk-provider",
+  "phosphor-icons/react",
+  "plist",
+  "postal-mime",
+  "react",
+  "react-dom",
+  "react-markdown",
+  "react-router",
+  "react-router/dev",
+  "remark-gfm",
+  "tailwindcss",
+  "tailwindcss/vite",
+  "tanstack/react-query",
+  "tiptap/extension-color",
+  "tiptap/extension-highlight",
+  "tiptap/extension-image",
+  "tiptap/extension-link",
+  "tiptap/extension-text-align",
+  "tiptap/extension-text-style",
+  "tiptap/extension-underline",
+  "tiptap/react",
+  "tiptap/starter-kit",
+  "tsx",
+  "types/dompurify",
+  "types/node",
+  "types/react",
+  "types/react-dom",
+  "typescript",
+  "vite",
+  "vite-tsconfig-paths",
+  "workers-ai-provider",
+  "wrangler",
+  "xterm/addon-fit",
+  "xterm/xterm",
+  "zod",
+  "zustand"
+ ],
+ "ranking": [
+  {
+   "template": "agent-host",
+   "score": 21.791,
+   "library_hits": [
+    "electron",
+    "electron-builder",
+    "electron/osx-sign",
+    "electron/packager",
+    "node-pty",
+    "react",
+    "tsx",
+    "typescript",
+    "vite"
+   ],
+   "text_similarity": 0.379
+  },
+  {
+   "template": "support-answerer",
+   "score": 16.545,
+   "library_hits": [
+    "ai",
+    "hono",
+    "imapflow",
+    "postal-mime",
+    "typescript",
+    "zod"
+   ],
+   "text_similarity": 0.455
+  },
+  {
+   "template": "delivery-gateway",
+   "score": 11.826,
+   "library_hits": [
+    "agents",
+    "modelcontextprotocol/sdk",
+    "typescript",
+    "zod"
+   ],
+   "text_similarity": 0.383
+  },
+  {
+   "template": "chat-assistant",
+   "score": 11.101,
+   "library_hits": [
+    "hono",
+    "typescript",
+    "wrangler",
+    "zod"
+   ],
+   "text_similarity": 0.31
+  },
+  {
+   "template": "sales-leads",
+   "score": 11.088,
+   "library_hits": [
+    "ai",
+    "hono",
+    "typescript",
+    "zod"
+   ],
+   "text_similarity": 0.309
+  },
+  {
+   "template": "search-traffic",
+   "score": 10.689,
+   "library_hits": [
+    "agents",
+    "modelcontextprotocol/sdk",
+    "typescript",
+    "zod"
+   ],
+   "text_similarity": 0.269
+  },
+  {
+   "template": "media-production",
+   "score": 10.457,
+   "library_hits": [
+    "esbuild",
+    "hono",
+    "typescript",
+    "zod"
+   ],
+   "text_similarity": 0.246
+  },
+  {
+   "template": "account-service",
+   "score": 9.774,
+   "library_hits": [
+    "agents",
+    "typescript",
+    "vite"
+   ],
+   "text_similarity": 0.377
+  },
+  {
+   "template": "web-quality",
+   "score": 9.765,
+   "library_hits": [
+    "agents",
+    "typescript",
+    "zod"
+   ],
+   "text_similarity": 0.376
+  },
+  {
+   "template": "listening",
+   "score": 9.142,
+   "library_hits": [
+    "agents",
+    "hono",
+    "typescript"
+   ],
+   "text_similarity": 0.314
+  },
+  {
+   "template": "org-administrator",
+   "score": 7.608,
+   "library_hits": [
+    "agents",
+    "typescript"
+   ],
+   "text_similarity": 0.361
+  },
+  {
+   "template": "host-operations",
+   "score": 7.581,
+   "library_hits": [
+    "agents",
+    "electron"
+   ],
+   "text_similarity": 0.358
+  },
+  {
+   "template": "content-brand",
+   "score": 7.114,
+   "library_hits": [
+    "tsx",
+    "typescript"
+   ],
+   "text_similarity": 0.311
+  },
+  {
+   "template": "product-bot",
+   "score": 7.052,
+   "library_hits": [
+    "typescript",
+    "zod"
+   ],
+   "text_similarity": 0.305
+  },
+  {
+   "template": "growth-analytics",
+   "score": 6.812,
+   "library_hits": [
+    "hono",
+    "typescript"
+   ],
+   "text_similarity": 0.281
+  },
+  {
+   "template": "marketing-analyst",
+   "score": 6.616,
+   "library_hits": [
+    "typescript",
+    "zustand"
+   ],
+   "text_similarity": 0.262
+  },
+  {
+   "template": "deal-desk",
+   "score": 6.205,
+   "library_hits": [
+    "agents",
+    "plist"
+   ],
+   "text_similarity": 0.22
+  },
+  {
+   "template": "data-room",
+   "score": 5.472,
+   "library_hits": [
+    "typescript"
+   ],
+   "text_similarity": 0.347
+  },
+  {
+   "template": "installer",
+   "score": 5.243,
+   "library_hits": [
+    "agents"
+   ],
+   "text_similarity": 0.324
+  },
+  {
+   "template": "product-admin-skills",
+   "score": 5.17,
+   "library_hits": [
+    "typescript"
+   ],
+   "text_similarity": 0.317
+  },
+  {
+   "template": "research",
+   "score": 4.586,
+   "library_hits": [
+    "ai"
+   ],
+   "text_similarity": 0.259
+  },
+  {
+   "template": "estate-engine",
+   "score": 3.445,
+   "library_hits": [],
+   "text_similarity": 0.345
+  },
+  {
+   "template": "store-publisher",
+   "score": 3.33,
+   "library_hits": [],
+   "text_similarity": 0.333
+  },
+  {
+   "template": "assessment",
+   "score": 3.182,
+   "library_hits": [],
+   "text_similarity": 0.318
+  },
+  {
+   "template": "content-pipeline",
+   "score": 1.814,
+   "library_hits": [],
+   "text_similarity": 0.181
+  }
+ ]
+}
