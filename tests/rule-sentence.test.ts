@@ -96,11 +96,11 @@ test("a test run that matches says what would happen; one that does not says whi
   assert.equal(testRunSentence(invoices, matched, undefined, ru), "Правило переслало бы письмо на accounts@owner.example.");
   const missed = { ...matched, matched: false, analysis: { matches: false, summary: "Conditions did not match", draft: "" } };
   assert.equal(testRunSentence(invoices, missed, { sender: "Bob <bob@acme.example>", subject: "Invoice 12" }, en),
-    "Would not act: the sender is not ann@acme.example");
+    "Would not act: the sender is not ann@acme.example.");
   assert.equal(testRunSentence(invoices, missed, { sender: "Ann <ANN@acme.example>", subject: "Hello" }, en),
-    "Would not act: the subject does not contain “invoice”");
+    "Would not act: the subject does not contain “invoice”.");
   assert.equal(testRunSentence(invoices, missed, { sender: "Ann <ANN@acme.example>", subject: "Hello" }, ru),
-    "Правило не сработало бы: в теме нет «invoice»");
+    "Правило не сработало бы: в теме нет «invoice».");
   const about = rule({ conditions: { ai: "a refund request" } });
   assert.equal(whyNot(about, { sender: "x@acme.example", subject: "Hi" }, en), "it is not about “a refund request”");
   assert.equal(whyNot(about, { sender: "x@acme.example", subject: "Hi" }, ru), "письмо не подходит под условие «a refund request»");
@@ -112,4 +112,7 @@ test("a test run that matches says what would happen; one that does not says whi
     [{ type: "mcp", endpoint: "https://tools.acme.example/mcp", tool: "file_ticket", arguments: {}, location: "cloud" }, "Would call file_ticket on tools.acme.example."],
   ] as const) assert.equal(wouldDo(action, en), english);
   assert.equal(wouldDo({ type: "mark_read" }, ru), "Правило отметило бы письмо прочитанным.");
+  // A-28: every result is a whole sentence, so the "Nothing was changed." after it never runs on.
+  for (const message of [{ sender: "Bob <bob@acme.example>", subject: "Invoice 12" }, { sender: "Ann <ann@acme.example>", subject: "Hello" }, undefined])
+    for (const locale of [en, ru]) assert.match(testRunSentence(invoices, missed, message, locale), /\.$/);
 });

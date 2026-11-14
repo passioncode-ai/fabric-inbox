@@ -135,7 +135,27 @@ test("a run waiting for the person offers Approve and Cancel and is counted on t
   assert.match(html, />Waiting for your approval</);
   assert.match(html, />Approve</);
   assert.match(html, />Cancel</);
-  assert.match(html, /class="fi-rules-count" aria-label="1 waits for you">1</);
+  assert.match(html, /class="fi-rules-count" aria-hidden="true">1<\/span><span class="fi-visually-hidden">1 waits for you<\/span>/);
+});
+
+test("the Rules, History and Sending tabs are a tab list: one in the Tab order, each controlling the one panel that names it (A-29)", () => {
+  const outbox = [{ id: "o1", status: "accepted", createdAt: "2026-10-06T10:00:00.000Z" }];
+  const html = render("support@acme.example", { rules: [], runs: [], outbox }, { search: "?tab=history" });
+  const tabs = [...html.matchAll(/<button[^>]*role="tab"[^>]*>/g)].map((m) => m[0]);
+  assert.equal(tabs.length, 3);
+  for (const [i, id] of ["rules", "history", "sending"].entries()) {
+    assert.match(tabs[i], new RegExp(`id="fi-rules-tab-${id}"`));
+    assert.match(tabs[i], /aria-controls="fi-rules-panel"/);
+    assert.match(tabs[i], id === "history" ? /aria-selected="true"[^>]*tabindex="0"/ : /aria-selected="false"[^>]*tabindex="-1"/);
+  }
+  const panels = [...html.matchAll(/role="tabpanel"[^>]*>/g)].map((m) => m[0]);
+  assert.equal(panels.length, 1);
+  assert.match(panels[0], /id="fi-rules-panel" aria-labelledby="fi-rules-tab-history"/);
+  // Without anything being sent, the list is two tabs and Rules is the one in the Tab order.
+  const two = render("gmail:g1", { rules: [], runs: [] });
+  assert.equal([...two.matchAll(/role="tab"/g)].length, 2);
+  assert.match(two, /id="fi-rules-tab-rules"[^>]*tabindex="0"/);
+  assert.match(two, /aria-labelledby="fi-rules-tab-rules"/);
 });
 
 test("run states in words, a reason set inside the sentence (S10)", () => {

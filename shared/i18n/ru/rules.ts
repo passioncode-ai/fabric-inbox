@@ -377,7 +377,7 @@ export const RULES: Readonly<Record<string, string>> = {
 	"Would forward it to {to}.": "Правило переслало бы письмо на {to}.",
 	"Would call {tool} on {host}.": "Правило вызвало бы {tool} на {host}.",
 	"Would act on it.": "Правило сработало бы на этом письме.",
-	"Would not act: {reason}": "Правило не сработало бы: {reason}",
+	"Would not act: {reason}.": "Правило не сработало бы: {reason}.",
 	"the sender is not {from}": "отправитель не {from}",
 	"the subject does not contain “{subject}”": "в теме нет «{subject}»",
 	"it is not about “{about}”": "письмо не подходит под условие «{about}»",

@@ -213,7 +213,7 @@ export const CONNECT: Readonly<Record<string, string>> = {
 	"Incoming server (IMAP, SSL/TLS)": "Сервер входящей почты (IMAP, SSL/TLS)",
 	"Port": "Порт",
 	"Sending server (SMTP)": "Сервер исходящей почты (SMTP)",
-	"Security": "Шифрование",
+	"[connection] Security": "Шифрование",
 	"SSL/TLS (port 465)": "SSL/TLS (порт 465)",
 	"STARTTLS (port 587)": "STARTTLS (порт 587)",
 	"User name": "Имя пользователя",

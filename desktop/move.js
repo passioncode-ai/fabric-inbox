@@ -62,7 +62,7 @@ async function summary(address, to) {
       el('li', { text: t('From then on its mail arrives at {server}.', { server: labelOf(to) }) }),
       el('li', { text: t('This server keeps its copy and sends nothing from it, until you remove it here yourself.') }),
     ]),
-    el('div', { class: 'actions' }, [button(t('Back'), () => pick()), button(t('Move'), () => void act(() => window.fabricMove.start(address, to)), 'primary')]));
+    el('div', { class: 'actions' }, [button(t('Back'), () => pick()), button(t('[action] Move'), () => void act(() => window.fabricMove.start(address, to)), 'primary')]));
 }
 
 function progress(state) {
