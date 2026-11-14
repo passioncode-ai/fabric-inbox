@@ -858,7 +858,9 @@ function LeftOutFiles({
             .map((x) =>
               x.why === "dangerous"
                 ? row(x, t("Not attached: the safety check found this file dangerous"), true)
-                : row(x, t("Removed; it will not be sent")),
+                : x.why === "unchecked"
+                  ? row(x, t("Not attached: the safety check could not read this file"), true)
+                  : row(x, t("Removed; it will not be sent")),
             )}
         </ul>
       )}

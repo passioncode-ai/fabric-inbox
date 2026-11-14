@@ -44,17 +44,17 @@ export type Draft = {
   signature?: string;
   /**
    * A forward's original files left out on purpose (B-274): removed by the person, past what one
-   * message may carry, or found dangerous by the safety check. Not sent and not asked for again;
+   * message may carry, found dangerous by the safety check, or not read by a check that failed. Not sent and not asked for again;
    * a draft saved before this field has none.
    */
   leftOut?: LeftOut[];
 };
 /** Why an original file is not on a forward (B-274, S09). */
-export type LeftOutWhy = "removed" | "no-room" | "dangerous";
+export type LeftOutWhy = "removed" | "no-room" | "dangerous" | "unchecked";
 export type LeftOut = { id: string; why: LeftOutWhy };
 /** A file's safety colour, as S03's one table gives it (B-269); absent until a check names one. */
 export type FileSafety = "green" | "grey" | "amber" | "red";
-const LEFT_OUT_WHY: readonly LeftOutWhy[] = ["removed", "no-room", "dangerous"];
+const LEFT_OUT_WHY: readonly LeftOutWhy[] = ["removed", "no-room", "dangerous", "unchecked"];
 const SAFETY: readonly FileSafety[] = ["green", "grey", "amber", "red"];
 function leftOut(value: unknown): LeftOut[] | undefined {
   if (value === undefined) return;
@@ -91,7 +91,8 @@ export type ForwardSource = {
   accountId: string;
   originalId: string;
   provider: "gmail" | "imap" | "outlook" | "cloudflare";
-  files: { id: string; filename: string; mimeType: string; size: number; safety?: FileSafety }[];
+  /** `unchecked`: the message's safety check failed and named nothing about this file (K-1 of the F1 review). */
+  files: { id: string; filename: string; mimeType: string; size: number; safety?: FileSafety; unchecked?: boolean }[];
 };
 function forwardSource(value: unknown): ForwardSource | undefined {
   if (value === undefined) return;
@@ -118,7 +119,8 @@ function forwardSource(value: unknown): ForwardSource | undefined {
       typeof f.mimeType !== "string" ||
       !Number.isSafeInteger(f.size) ||
       f.size < 0 ||
-      (f.safety !== undefined && !SAFETY.includes(f.safety))
+      (f.safety !== undefined && !SAFETY.includes(f.safety)) ||
+      (f.unchecked !== undefined && f.unchecked !== true)
     )
       throw new Error(msg("Invalid forward source"));
     ids.add(f.id);
@@ -128,6 +130,7 @@ function forwardSource(value: unknown): ForwardSource | undefined {
       mimeType: f.mimeType,
       size: f.size,
       ...(f.safety ? { safety: f.safety } : {}),
+      ...(f.unchecked ? { unchecked: true as const } : {}),
     };
   });
   return {

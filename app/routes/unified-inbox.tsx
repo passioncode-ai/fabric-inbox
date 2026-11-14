@@ -551,7 +551,8 @@ export default function UnifiedInbox() {
           { accountId: selected!.accountId, messageId: key.messageId }, "POST").catch(() => null);
         if (checked?.record) { record = checked.record; feedVersion = checked.feedVersion ?? feedVersion; }
       }
-      return { record, feedVersion };
+      // `unavailable`: this server does not check mail, so a message without a record is not a failed check.
+      return { record, feedVersion, unavailable: !!looked.unavailable };
     },
   });
   const safetyColour = safetyCheck.data ? colourOf(safetyCheck.data.record, safetyCheck.data.feedVersion) : UNCHECKED;
@@ -987,11 +988,19 @@ export default function UnifiedInbox() {
     }
     const signed = signature ? "\n\n" + signature : "";
     // A-1 (S03, S09): a forward carries each file's safety colour, so a dangerous one is never attached by itself. The
-    // open message's check may still be running: it is awaited; a check that fails leaves every file "Not checked".
+    // open message's check may still be running, or may have failed: it is asked again once. K-1 of the F1 review: a
+    // check that still cannot be read on a server that checks mail leaves the files it did not name out ("Attach
+    // anyway"), never attached by themselves as "Not checked".
     let forwardColours = safetyFiles;
-    if (mode === "forward" && m?.attachments.length && !safetyCheck.data) {
-      const checked = await safetyCheck.refetch().catch(() => null);
-      forwardColours = new Map((checked?.data?.record?.findings.check?.files ?? []).map((f) => [f.id, f]));
+    let forwardFailed = false;
+    if (mode === "forward" && m?.attachments.length) {
+      let data = safetyCheck.data;
+      if (!data?.unavailable && !data?.record?.findings.check) {
+        const checked = await safetyCheck.refetch().catch(() => null);
+        data = checked?.isSuccess ? checked.data : undefined;
+      }
+      forwardColours = new Map((data?.record?.findings.check?.files ?? []).map((f) => [f.id, f]));
+      forwardFailed = !data || (!data.unavailable && !data.record?.findings.check);
     }
     // S08: a reply with text selected starts with that text quoted, an empty line, then the signature.
     const quoted = mode === "reply" ? quotedStart() : "";
@@ -1034,7 +1043,7 @@ export default function UnifiedInbox() {
               accountId: selected.accountId,
               originalId: selected.providerMessageId,
               provider: selected.provider,
-              files: originalsWithSafety(m.attachments, forwardColours),
+              files: originalsWithSafety(m.attachments, forwardColours, { failed: forwardFailed }),
             }
           : undefined,
       threadId: mode === "reply" ? m?.threadId : undefined,

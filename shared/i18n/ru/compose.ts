@@ -36,6 +36,7 @@ export const COMPOSE: Readonly<Record<string, string>> = {
 	"{n} files did not fit in one message": "{n} файл не поместился в одно письмо|{n} файла не поместились в одно письмо|{n} файлов не поместились в одно письмо",
 	"No room left: remove a file first": "Места нет: сначала уберите файл",
 	"Not attached: the safety check found this file dangerous": "Не прикреплён: проверка нашла файл опасным",
+	"Not attached: the safety check could not read this file": "Не прикреплён: проверка не смогла прочитать файл",
 	"Removed; it will not be sent": "Убран, не будет отправлен",
 	"Attach": "Прикрепить",
 	"Attach anyway": "Всё равно прикрепить",
