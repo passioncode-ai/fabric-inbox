@@ -15,13 +15,15 @@ below is on `main`. The previous entry is [2026-11-12](2026-11-12-one-window-and
 | The owner's server: the reply agent project's offers desk host added to `AUTOMATION_MCP_HOSTS`, its credential set as `AUTOMATION_TOOL_TOKEN_PRIVATE..._LEADS` from the vault; the map and its entries untouched; answered on board thread `7a01c638` (message `44033b76`) | Cloudflare script settings read back | the requester adds its grant with that `tokenRef` |
 | B-261 SL-3: a console session with no output and no input for 30 minutes logs `quiet` (and `active` when it resumes) and the console says it still holds its key; the digest map counts `active` ok and `quiet` unknown | PR #548 `a48e7f0` | `tests/desktop-console.test.ts`, `tests/desktop-ops-digest.test.ts`; SCN-078 |
 | Release 1.6.16 (B-261) merged and on the three servers | PR #549 `bffb28c`; deploy receipts, tag `bffb28ce55e2`, all `linked` | versions `b6a97ea3`, `40221677`, `7dd9622f`; the tag `v1.6.16` waits for the 1.6.15 run |
+| B-265 step 1: no em dash in the English interface strings and the app's markup (25 keys and their Russian values, 10 separators); `tests/no-em-dash-ui.test.ts` | PR #551 `4166af8` | copy checks on the changed strings, both locales |
+| Release 1.6.17 (B-265 step 1) merged and on the three servers | PR #552 `6690e71`; receipts tag `6690e71ed794`, all `linked` | versions `e5869050`, `1b403035`, `dcff28cf`; the tag `v1.6.17` waits for the 1.6.16 run |
 | Board: the coordinator's rule (`35556d27`) recorded in `AGENTS.md` and answered (`e794b5c7`, with the North Star state for section 4); 27 unread messages read and marked | board thread `16093ded` | |
 | Audit of production: one day of Worker logs on the three servers | Workers Observability, `CF_WORKERS_OBSERVABILITY_READ` | only `support_topics_failed` twice, caused by the deploy's Durable Object reset and retried by itself (`TOPICS_IDLE_MS`): no defect |
 | B-265 filed: em dashes in text people read (25 English interface strings, 163 Russian translations, README, docs) | `docs/evidence/backlog.md` | counts by `grep -c` |
 
 ## Open, with its watcher
 
-- The tag `v1.6.16` on `bffb28c` goes after the 1.6.15 run is published (one heavy run at a time).
+- The tag `v1.6.16` on `bffb28c` was pushed after 1.6.15 published (run `43533241999`); the tag `v1.6.17` on `6690e71` goes after it is published (one heavy run at a time).
 - B-246 cut-over on or after 2026-11-15 (unchanged from the previous handoff): read the three servers' logs for
   `grant_shadow_disagreement` and `grant_shadow_failed`; with none, deploy with `GRANTS_DECIDE` on (operator
   2026-11-13: «Да, включай сам»). Note: `wrangler deploy --var NAME:VALUE` breaks on a value with dots; put such a
@@ -33,7 +35,10 @@ below is on `main`. The previous entry is [2026-11-12](2026-11-12-one-window-and
 
 ## Exact next task
 
-1. When release run `43529369199` is green and `gh release view v1.6.15` lists 20 assets: mark B-228 and B-264 done
-   with the release receipt; push the tag `v1.6.16` on `bffb28c`, watch its run, and mark B-261's SL-3 released.
+1. When run `43533241999` is green and `gh release view v1.6.16` lists 20 assets: push the tag `v1.6.17` on `6690e71`
+   and watch its run to the published release.
 2. On or after 2026-11-15: the B-246 cut-over above.
-3. B-265: the interface strings first.
+3. B-265 step 2: the remaining Russian translations with an em dash (about 140 in `shared/i18n/ru/`, 22 of them in the
+   Mac app's copy), each rewritten with a colon, a comma or brackets where it reads naturally (Russian grammar keeps a
+   dash only where no rewrite reads naturally), checked with the copy check in `ru-RU`, then the server texts a person
+   reads (setup names, knowledge citations), README and current docs.
