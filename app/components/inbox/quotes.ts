@@ -129,3 +129,64 @@ export function answeredRows(rows: ReplyFacts[]): number[] {
 
 /** A reply is set in one level when it does not answer the message right above it (two replies to one message). */
 export const isNested = (answered: number, index: number) => answered >= 0 && answered !== index - 1;
+
+/** A rule's run on a message of the thread, as `GET /api/automation/:account/runs` lists it. */
+export interface RunLike {
+  emailId: string;
+  status: string;
+  updatedAt: string;
+  rule: { name?: string; action?: { type?: string; to?: string; tool?: string } };
+}
+/** The safety check's record of a message of the thread, as `POST /api/safety/lookup` answers it. */
+export interface SafetyLike {
+  state: string;
+  decidedBy?: string;
+  decidedAt?: number;
+  checkedAt?: number;
+}
+export type EventCode = "rule_waiting" | "rule_failed" | "rule_forwarded" | "rule_archived" | "rule_marked_read" | "rule_drafted"
+  | "rule_called_tool" | "safety_held" | "safety_kept" | "safety_released_by_review" | "safety_released";
+/** A thin row between the cells: something a rule or the safety check did to a message of the thread. */
+export interface ThreadEvent {
+  at: number;
+  messageId: string;
+  kind: "rule" | "safety";
+  /** What happened; the reader words it (`ConversationList`'s `eventText`). */
+  code: EventCode;
+  values: Record<string, string>;
+}
+
+/**
+ * S05 (B-221): the rule and safety events of a thread's messages, oldest first, read from the routes the app already has
+ * (the rule history and the safety lookup), so agents read the same facts through `list_rules` and `list_held_messages`.
+ * A run that is still deciding (pending, running) and a clear safety record are not events.
+ */
+export function threadEvents(messageIds: readonly string[], runs: readonly RunLike[], safety: Readonly<Record<string, SafetyLike>>): ThreadEvent[] {
+  const ids = new Set(messageIds);
+  const out: ThreadEvent[] = [];
+  for (const run of runs) {
+    if (!ids.has(run.emailId)) continue;
+    const name = run.rule?.name || "";
+    const at = Date.parse(run.updatedAt) || 0;
+    const a = run.rule?.action ?? {};
+    const push = (code: EventCode, values: Record<string, string> = {}) => out.push({ at, messageId: run.emailId, kind: "rule", code, values: { name, ...values } });
+    if (run.status === "waiting_approval") push("rule_waiting");
+    else if (run.status === "failed") push("rule_failed");
+    else if (run.status === "succeeded") {
+      if (a.type === "forward") push("rule_forwarded", { to: a.to ?? "" });
+      else if (a.type === "archive") push("rule_archived");
+      else if (a.type === "mark_read") push("rule_marked_read");
+      else if (a.type === "draft") push("rule_drafted");
+      else if (a.type === "mcp") push("rule_called_tool", { tool: a.tool ?? "" });
+    }
+  }
+  for (const id of messageIds) {
+    const s = safety[id];
+    if (!s || s.state === "clear") continue;
+    const at = s.decidedAt || s.checkedAt || 0;
+    const code: EventCode = s.state === "held" ? "safety_held" : s.state === "kept" ? "safety_kept"
+      : s.decidedBy === "review" ? "safety_released_by_review" : "safety_released";
+    out.push({ at, messageId: id, kind: "safety", code, values: {} });
+  }
+  return out.sort((x, y) => x.at - y.at);
+}

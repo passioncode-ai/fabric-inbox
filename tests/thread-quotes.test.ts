@@ -55,3 +55,22 @@ test("the conversation shows what a reply answered, nested, with a disclosure an
   assert.match(list, /t\("Go to message"\)/);
   assert.match(list, /is-nested/);
 });
+
+test("rule and safety events of a thread's messages, oldest first, from the runs and the safety lookup", async () => {
+  const { threadEvents } = await import("../app/components/inbox/quotes");
+  const rule = (type: string, extra = {}) => ({ name: "Invoices", action: { type, ...extra } });
+  const events = threadEvents(["m1", "m2", "m3"], [
+    { emailId: "m1", status: "succeeded", updatedAt: "2026-11-14T10:00:00Z", rule: rule("forward", { to: "accounts@owner.example" }) },
+    { emailId: "m2", status: "waiting_approval", updatedAt: "2026-11-14T11:00:00Z", rule: rule("archive") },
+    { emailId: "m3", status: "pending", updatedAt: "2026-11-14T12:00:00Z", rule: rule("archive") },
+    { emailId: "other", status: "succeeded", updatedAt: "2026-11-14T09:00:00Z", rule: rule("archive") },
+  ], {
+    m2: { state: "held", checkedAt: Date.parse("2026-11-14T10:30:00Z") },
+    m3: { state: "released", decidedBy: "review", decidedAt: Date.parse("2026-11-14T12:30:00Z") },
+    m1: { state: "clear", checkedAt: 1 },
+  });
+  assert.deepEqual(events.map((e) => [e.messageId, e.code]), [
+    ["m1", "rule_forwarded"], ["m2", "safety_held"], ["m2", "rule_waiting"], ["m3", "safety_released_by_review"],
+  ]);
+  assert.deepEqual(events[0]!.values, { name: "Invoices", to: "accounts@owner.example" });
+});

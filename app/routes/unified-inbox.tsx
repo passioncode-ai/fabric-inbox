@@ -56,7 +56,7 @@ import ReplyFilter from "~/components/inbox/ReplyFilter";
 import { forwardBody } from "../../shared/mail/forward";
 import { isAgentState, type AgentStatusSettings } from "../../shared/mail/agent-state";
 import ConversationList from "~/components/inbox/ConversationList";
-import { foldQuotedHtml } from "~/components/inbox/quotes";
+import { foldQuotedHtml, threadEvents, type RunLike, type SafetyLike } from "~/components/inbox/quotes";
 import { loadConversation, markRead, messageBody, type ThreadRow } from "~/components/inbox/thread";
 import AgentRunPanel from "~/components/inbox/AgentRunPanel";
 import HeldPanel from "~/components/inbox/HeldPanel";
@@ -466,6 +466,26 @@ export default function UnifiedInbox() {
     enabled: !!selected?.threadId,
     queryFn: () => loadConversation(selected!, (url) => fabric(url)),
     staleTime: 30_000,
+  });
+  // S05 (B-221): what rules and the safety check did to this thread's messages, from the rule history and the safety
+  // lookup the app already reads; a member or a server without them simply shows no event rows.
+  const threadEventRows = useQuery({
+    queryKey: ["thread-events", selected?.accountId, selected?.threadId, (conversation.data ?? []).length],
+    enabled: !!selected && (conversation.data?.length ?? 0) > 1,
+    staleTime: 30_000,
+    queryFn: async () => {
+      const ids = (conversation.data ?? []).map((r) => r.message.providerMessageId);
+      const account = selected!.accountId;
+      const rulesAccount = isRemote(selected!.provider) ? account : rawAccount(account);
+      const [runs, lookup] = await Promise.all([
+        fabric<RunLike[]>(`/api/automation/${encodeURIComponent(rulesAccount)}/runs`).catch(() => [] as RunLike[]),
+        fabric<{ records?: Record<string, SafetyLike> }>("/api/safety/lookup", { keys: ids.slice(0, 200).map((messageId) => ({ accountId: account.toLowerCase(), messageId })) })
+          .catch(() => ({ records: {} as Record<string, SafetyLike> })),
+      ]);
+      const byId: Record<string, SafetyLike> = {};
+      for (const id of ids) { const r = lookup.records?.[`${account.toLowerCase()}|${id}`]; if (r) byId[id] = r; }
+      return threadEvents(ids, Array.isArray(runs) ? runs : [], byId);
+    },
   });
   /**
    * Marks messages of the open conversation read (B-114): the whole conversation, or one message shown
@@ -1625,7 +1645,7 @@ export default function UnifiedInbox() {
                         {threaded ? (
                           <ConversationList rows={conversation.data ?? []} openId={selected.providerMessageId}
                             onOpen={(message) => setSelected(message)} loadBody={(message) => messageBody(message, (url) => fabric(url))}
-                            onMarkRead={markConversationRead} renderOpen={() => openContent} />
+                            onMarkRead={markConversationRead} events={threadEventRows.data ?? []} renderOpen={() => openContent} />
                         ) : openContent}
                       </div>
                       <footer className="fi-reply-bar">

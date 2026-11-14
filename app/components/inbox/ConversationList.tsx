@@ -6,7 +6,7 @@ import { senderName, type InboxMessage } from "./model";
 import { unreadOf, type ThreadRow } from "./thread";
 import { listDate } from "./triage-view";
 import { agentRunLabel, agentRunNeedsLook } from "./agent-run";
-import { answeredRows, foldQuotedHtml, isNested, splitQuotedText, type QuoteLabels } from "./quotes";
+import { answeredRows, foldQuotedHtml, isNested, splitQuotedText, type QuoteLabels, type ThreadEvent } from "./quotes";
 import { addressOf, compactRecipients, headerFacts } from "./message-header";
 
 /** Messages shown whole at once; earlier ones wait behind "Show earlier messages" (a long thread stays light). */
@@ -21,8 +21,10 @@ const SHOWN = 25;
  * Reply, Reply all and Forward act on it. Opening the conversation reads it, as opening a message does.
  * Shown only when the conversation has more than one message.
  */
-export default function ConversationList({ rows, openId, onOpen, loadBody, onMarkRead, renderOpen }: {
+export default function ConversationList({ rows, openId, onOpen, loadBody, onMarkRead, renderOpen, events = [] }: {
   rows: ThreadRow[];
+  /** S05 (B-221): what rules and the safety check did to the thread's messages, shown as thin rows after each one. */
+  events?: ThreadEvent[];
   openId: string;
   onOpen: (message: InboxMessage) => void;
   /** A message's HTML or text, for a cell whose body the thread route did not carry (Gmail, IMAP, Outlook). */
@@ -109,6 +111,11 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
                 {nested && target && <ReplyTo target={target} onGo={() => { if (answers < hidden) setEarlier(true); setGoto(target.message.id); }} />}
                 <div className="fi-thread-cell-body">{open ? renderOpen() : <CellBody row={row} loadBody={loadBody} />}</div>
               </article>
+              {events.filter((e) => e.messageId === row.message.providerMessageId).map((e, i) => (
+                <p key={`${e.kind}-${i}`} className={"fi-thread-event is-" + e.kind}>
+                  {eventText(e, t)}{e.at ? <> · <time dateTime={new Date(e.at).toISOString()}>{listDate(new Date(e.at).toISOString(), undefined, t)}</time></> : null}
+                </p>
+              ))}
             </li>
           );
         })}
@@ -148,6 +155,24 @@ function ReplyTo({ target, onGo }: { target: ThreadRow; onGo: () => void }) {
       )}
     </div>
   );
+}
+
+/** S05: a thread event in the reader's words. */
+function eventText(e: ThreadEvent, t: ReturnType<typeof useT>): string {
+  const v = e.values;
+  switch (e.code) {
+    case "rule_waiting": return t("The rule {name} waits for your approval", v);
+    case "rule_failed": return t("The rule {name} failed on this message", v);
+    case "rule_forwarded": return t("The rule {name} forwarded this to {to}", v);
+    case "rule_archived": return t("The rule {name} archived this", v);
+    case "rule_marked_read": return t("The rule {name} marked this read", v);
+    case "rule_drafted": return t("The rule {name} prepared a reply draft", v);
+    case "rule_called_tool": return t("The rule {name} called the tool {tool}", v);
+    case "safety_held": return t("The safety check held this message");
+    case "safety_kept": return t("You kept this message held");
+    case "safety_released_by_review": return t("The safety check's review released this message");
+    case "safety_released": return t("You released this message");
+  }
 }
 
 function whoSent(row: ThreadRow, t: ReturnType<typeof useT>): string {

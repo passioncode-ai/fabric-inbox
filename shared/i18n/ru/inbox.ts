@@ -384,6 +384,17 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"Go to message": "Перейти к письму",
 	"Show quoted text": "Показать цитату",
 	"Hide quoted text": "Скрыть цитату",
+	"The rule {name} waits for your approval": "Правило «{name}» ждёт вашего одобрения",
+	"The rule {name} failed on this message": "Правило «{name}» не сработало на этом письме",
+	"The rule {name} forwarded this to {to}": "Правило «{name}» переслало это письмо на {to}",
+	"The rule {name} archived this": "Правило «{name}» отправило это письмо в архив",
+	"The rule {name} marked this read": "Правило «{name}» отметило это письмо прочитанным",
+	"The rule {name} prepared a reply draft": "Правило «{name}» подготовило черновик ответа",
+	"The rule {name} called the tool {tool}": "Правило «{name}» вызвало инструмент {tool}",
+	"The safety check held this message": "Проверка безопасности задержала это письмо",
+	"You kept this message held": "Вы оставили это письмо задержанным",
+	"The safety check's review released this message": "Проверка безопасности отпустила это письмо после разбора",
+	"You released this message": "Вы отпустили это письмо",
 	// S01 (B-267)
 	"All groups": "Все группы",
 };
