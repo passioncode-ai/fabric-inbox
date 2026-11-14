@@ -9,6 +9,7 @@ import type { AgentList, ProjectAddress, ProjectAddresses, RoutingStatus, TestSt
 import type { DomainList } from "~/services/domains";
 import { groupRows, stableGroup, visibleRows, type ListEntry } from "../list-model";
 import { settingsPath } from "../paths";
+import { useSettingsServers } from "../servers-context";
 import {
   ActionMenu, ActionResult, Badge, Dialog, ListSearch, LoadFailure, Panel, PanelBlock, PanelPlaceholder, PanelTabs,
   SectionLayout, SelectableList, SkeletonPanel, SkeletonRows, errorText, useConfirm, useNotify, useWork,
@@ -78,7 +79,10 @@ export default function AddressesSection({ id, tab }: { id: string | null; tab: 
 
   const adding = params.get("add") === "1";
   const closeAdd = () => setParams((p) => { const n = new URLSearchParams(p); n.delete("add"); n.delete("domain"); n.delete("name"); return n; }, { replace: true, preventScrollReset: true });
-  const openAdd = () => setParams((p) => { const n = new URLSearchParams(p); n.set("add", "1"); return n; }, { replace: true, preventScrollReset: true });
+  const openHere = () => setParams((p) => { const n = new URLSearchParams(p); n.set("add", "1"); return n; }, { replace: true, preventScrollReset: true });
+  // S11 (B-276): under All, adding asks which server first; another server opens its own add dialog there.
+  const servers = useSettingsServers();
+  const openAdd = () => { void (async () => { if (!servers || await servers.askAdd(settingsPath("addresses", null, null, { add: "1" }))) openHere(); })(); };
   // An address can be added on a domain receiving here, or (with a token) on any domain that can.
   const canAdd = domainOptions(domains.data).length > 0;
 
@@ -119,7 +123,7 @@ export default function AddressesSection({ id, tab }: { id: string | null; tab: 
 
   return (
     <>
-      <SectionLayout section="addresses" hasSelection={!!id}
+      <SectionLayout section="addresses" hasSelection={!!id} ownCount={loading || failed ? null : all.length}
         toolbar={<>
           <ListSearch value={query} onChange={setQuery} placeholder={t("Find an address")} label={t("Find an address")} />
           <button type="button" className="fi-primary" onClick={openAdd} disabled={loading || !canAdd}

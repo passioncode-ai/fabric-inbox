@@ -9,6 +9,7 @@ import { useT } from "../../../lib/i18n";
 import { englishT, type T } from "../../../../shared/i18n";
 import { groupRows, visibleRows, type ListEntry } from "../list-model";
 import { OUTLOOK_SECRET_QUERY, settingsPath } from "../paths";
+import { useSettingsServers } from "../servers-context";
 import {
   ActionMenu, ActionResult, Badge, Dialog, ListSearch, LoadFailure, Panel, PanelBlock, PanelPlaceholder, SectionLayout,
   SelectableList, SkeletonPanel, SkeletonRows, errorText, useConfirm, useWork,
@@ -86,6 +87,12 @@ export default function AccountsSection({ id }: { id: string | null }) {
     return n;
   }, { replace: true, preventScrollReset: true });
 
+  // S11 (B-276): under All, connecting asks which server first; another server opens its own setup there.
+  const servers = useSettingsServers();
+  const connect = async () => {
+    if (!servers || await servers.askAdd(settingsPath("accounts", null, null, { connect: "" }))) setConnecting("");
+  };
+
   const loading = domains.isPending && gmail.isPending;
   const listView = loading ? <SkeletonRows label={t("Loading your accounts…")} /> : (
     <>
@@ -95,7 +102,7 @@ export default function AccountsSection({ id }: { id: string | null }) {
         renderRow={(e) => <AccountRowContent entry={e} />}
         empty={<div className="fi-list-empty">
           <p>{query ? t("No account matches “{query}”.", { query }) : t("No account is connected yet. Connect Cloudflare for your own domains, Gmail, Outlook, or another mail account.")}</p>
-          {!query && <button type="button" className="fi-primary" onClick={() => setConnecting("")}>{t("Connect an account")}</button>}
+          {!query && <button type="button" className="fi-primary" onClick={() => void connect()}>{t("Connect an account")}</button>}
         </div>} />
       {domains.data?.problems?.map((p) => <p key={p} className="fi-load-failure" role="alert">{t.text(p)}</p>)}
     </>
@@ -105,7 +112,7 @@ export default function AccountsSection({ id }: { id: string | null }) {
     <PanelPlaceholder>
       <h2>{t("Choose an account")}</h2>
       <p>{t("Mail and rules keep running in the cloud when this app is closed.")}</p>
-      <button type="button" className="fi-primary" onClick={() => setConnecting("")}><PlusIcon size={16} /> {t("Connect an account")}</button>
+      <button type="button" className="fi-primary" onClick={() => void connect()}><PlusIcon size={16} /> {t("Connect an account")}</button>
     </PanelPlaceholder>
   ) : loading ? <SkeletonPanel label={t("Loading this account…")} /> : !selected ? (
     <PanelPlaceholder>
@@ -130,10 +137,10 @@ export default function AccountsSection({ id }: { id: string | null }) {
 
   return (
     <>
-      <SectionLayout section="accounts" hasSelection={!!id} list={listView} panel={panel}
+      <SectionLayout section="accounts" hasSelection={!!id} list={listView} panel={panel} ownCount={loading ? null : entries.length}
         toolbar={<>
           <ListSearch value={query} onChange={setQuery} placeholder={t("Find an account")} label={t("Find an account")} />
-          <button type="button" className="fi-primary" onClick={() => setConnecting("")}><PlusIcon size={16} /> {t("Connect account")}</button>
+          <button type="button" className="fi-primary" onClick={() => void connect()}><PlusIcon size={16} /> {t("Connect account")}</button>
         </>} />
       <ConnectDialog open={connecting !== null} provider={connecting || null} replaceSecret={replaceSecret}
         onChoose={(p) => setConnecting(p)}
@@ -146,13 +153,15 @@ export default function AccountsSection({ id }: { id: string | null }) {
 
 function AccountRowContent({ entry }: { entry: AccountEntry }) {
   const t = useT();
+  // S11 (B-276): with several servers, "your server" names which one.
+  const serverName = useSettingsServers()?.serverName ?? null;
   if (entry.kind === "cloudflare") {
     const a = entry.account;
     return (
       <>
         <span className="fi-row-main">
           <span className="fi-row-title">{a.name}</span>
-          <span className="fi-row-meta">{domainsText(a, t)}{a.server ? " · " + t("your server's account") : ""}</span>
+          <span className="fi-row-meta">{domainsText(a, t)}{a.server ? " · " + (serverName ? t("the account of {server}", { server: serverName }) : t("your server's account")) : ""}</span>
         </span>
         <span className="fi-row-side">
           {a.problem ? <Badge tone="bad">{t("Problem")}</Badge> : a.shown ? null : <Badge>{t("Hidden")}</Badge>}
