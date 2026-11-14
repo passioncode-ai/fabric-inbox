@@ -110,7 +110,7 @@ export const LEGACY: Readonly<Record<string, string>> = {
 	"Tip: Use operators like {from}, {unread}, {attachment}, {before}": "Совет: используйте операторы, например {from}, {unread}, {attachment}, {before}",
 
 	// Pages (app/routes/not-found.tsx)
-	"404 -- Page Not Found": "404 — страница не найдена",
+	"404 -- Page Not Found": "404: страница не найдена",
 	"The page you're looking for doesn't exist.": "Такой страницы нет.",
 
 	// Failures (app/lib/load-error.ts, mutation-errors.ts, app/queries/*, app/services/api.ts)

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- xterm injects its own <style>, so inline styles are allowed (Fabric Dashboards ADR-0017); nothing else is. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-src 'none'">
-<title>Agent console — Fabric Inbox</title>
+<title>Fabric Inbox agent console</title>
 <link rel="stylesheet" href="fabric-tokens.css">
 <link rel="stylesheet" href="console-vendor/xterm.css">
 <link rel="stylesheet" href="console.css">
@@ -25,9 +25,9 @@
   <div class="row">
     <label><span data-i18n>Agent</span> <select id="runtime"></select></label>
     <label><span data-i18n>Level</span> <select id="level">
-      <option value="admin" data-i18n>Admin — everything the app does</option>
-      <option value="mail" data-i18n>Mail — mail, no settings</option>
-      <option value="read" data-i18n>Read — changes nothing</option>
+      <option value="admin" data-i18n>Admin: everything the app does</option>
+      <option value="mail" data-i18n>Mail: mail, no settings</option>
+      <option value="read" data-i18n>Read: changes nothing</option>
     </select></label>
   </div>
   <div class="row">

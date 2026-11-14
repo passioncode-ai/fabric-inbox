@@ -8,9 +8,9 @@
 const { t } = require('./i18n.cjs');
 
 const LEVELS = {
-  read: () => t('Read — reads and searches mail and sees how everything is set up. Changes nothing.'),
-  mail: () => t('Mail — also drafts, moves and marks mail and reports spam. Changes no settings.'),
-  admin: () => t('Admin — everything the app does: mail, addresses and domains on Cloudflare, forwarding, spam lists, agents, categories, knowledge and rules. It can send.'),
+  read: () => t('Read: reads and searches mail and sees how everything is set up. Changes nothing.'),
+  mail: () => t('Mail: also drafts, moves and marks mail and reports spam. Changes no settings.'),
+  admin: () => t('Admin: everything the app does: mail, addresses and domains on Cloudflare, forwarding, spam lists, agents, categories, knowledge and rules. It can send.'),
 };
 const CLIENT_ID = /^[a-z][a-z0-9-]{1,62}$/;
 const STATE = /^[A-Za-z0-9_-]{22,128}$/;

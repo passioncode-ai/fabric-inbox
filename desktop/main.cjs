@@ -1227,7 +1227,7 @@ function openConsole() {
   if (dockReadyNow() && mailWindow && !mailWindow.isDestroyed() && !(consoleWindow && !consoleWindow.isDestroyed())) { toggleDock(); return; }
   if (consoleWindow && !consoleWindow.isDestroyed()) { consoleWindow.show(); consoleWindow.focus(); return; }
   const anchor = mailWindow && !mailWindow.isDestroyed() ? mailWindow.getBounds() : null;
-  consoleWindow = new BrowserWindow({ title: t('Agent console — Fabric Inbox'), width: 720, height: anchor ? anchor.height : 640, minWidth: 420, minHeight: 320,
+  consoleWindow = new BrowserWindow({ title: t('Fabric Inbox agent console'), width: 720, height: anchor ? anchor.height : 640, minWidth: 420, minHeight: 320,
     ...(anchor ? { x: anchor.x + anchor.width + 8, y: anchor.y } : {}), backgroundColor: '#111111',
     webPreferences: securePreferences({ preload: path.join(__dirname, 'console-preload.cjs'), partition: 'fabric-console' }) });
   rejectPermissions(consoleWindow.webContents.session);

@@ -212,7 +212,7 @@ function AgentPanel({ agent, list, tab, onDeleted }: { agent: Agent; list: Agent
         <ul className="fi-facts">
           <li><strong>{t("Answers")}</strong> {agent.addresses?.length
             ? agent.addresses.map((a, i) => <span key={a}>{i > 0 && ", "}<Link to={settingsPath("addresses", a)}>{a}</Link></span>)
-            : <>{t.rich("no address yet — choose it under {addresses} → Who answers", { addresses: <Link key="addresses" to={settingsPath("addresses")}>{t("Addresses")}</Link> })}</>}</li>
+            : <>{t.rich("no address yet: choose it under {addresses} → Who answers", { addresses: <Link key="addresses" to={settingsPath("addresses")}>{t("Addresses")}</Link> })}</>}</li>
           <li><strong>{t("Searches")}</strong> {agent.collections?.length ? t.list(agent.collections.map(collectionName)) : t("no knowledge collection")}</li>
           <li><strong>{t("Tools")}</strong> {agent.tools.length ? t.list(agent.tools.map((tool) => `${tool.name} (${hostOf(tool.endpoint)})`)) : t("none")}</li>
         </ul>
@@ -413,7 +413,7 @@ function AgentEditor({ value, version, toolHosts, busy, onChange, onSave, onCanc
 
       <fieldset>
         <legend>{t("Tools")}</legend>
-        <p className="fi-hint">{t("Remote MCP tools on allowed hosts: {hosts}. A tool failure turns the answer into a draft.", { hosts: toolHosts.length ? toolHosts.join(", ") : t("none — an administrator sets AUTOMATION_MCP_HOSTS") })}</p>
+        <p className="fi-hint">{t("Remote MCP tools on allowed hosts: {hosts}. A tool failure turns the answer into a draft.", { hosts: toolHosts.length ? toolHosts.join(", ") : t("none (an administrator sets AUTOMATION_MCP_HOSTS)") })}</p>
         {value.tools.map((tool, i) => (
           <div key={i} className="fi-callout">
             <div className="fi-field-row">
@@ -511,7 +511,7 @@ function RunsHistory({ agents, agentId }: { agents?: AgentList; agentId?: string
   });
   const collections = useQuery({ queryKey: COLLECTIONS_KEY, queryFn: () => fabric<CollectionList>("/api/knowledge/collections") });
   const collectionName = (cid: string) => collections.data?.collections.find((c) => c.id === cid)?.name ?? cid;
-  const agentName = (aid?: string) => agents?.agents.find((a) => a.id === aid)?.name ?? aid ?? "—";
+  const agentName = (aid?: string) => agents?.agents.find((a) => a.id === aid)?.name ?? aid ?? t("unknown");
   const runList = runs.data?.pages.flat() ?? [];
   return (
     <PanelBlock>
@@ -542,7 +542,7 @@ function RunsHistory({ agents, agentId }: { agents?: AgentList; agentId?: string
                 <strong>{statusText[run.status]}</strong>
                 <time className="fi-hint" dateTime={run.createdAt}>{t.dateTime(run.createdAt)}</time>
               </div>
-              <p style={{ margin: 0 }}>{t("{subject} — from {sender} to {mailbox}", { subject: run.subject || t("(No subject)"), sender: run.sender, mailbox: run.mailboxId })}</p>
+              <p style={{ margin: 0 }}>{t("{subject}, from {sender} to {mailbox}", { subject: run.subject || t("(No subject)"), sender: run.sender, mailbox: run.mailboxId })}</p>
               <p className="fi-hint" style={{ margin: 0 }}>
                 {run.agentId ? `${agentName(run.agentId)} v${run.agentVersion}` : t("No agent")}{run.intent ? ` · ${t("intent: {intent}", { intent: run.intent })}` : ""} · {t.text(run.reason)}
               </p>
@@ -569,8 +569,8 @@ function RunsHistory({ agents, agentId }: { agents?: AgentList; agentId?: string
                 <details>
                   <summary>{t.plural(run.toolCalls.length, { one: "{n} tool call", other: "{n} tool calls" })}</summary>
                   <ul>{run.toolCalls.map((call, i) => <li key={i}>{call.ok
-                    ? t("{name} on {host} — ok, {ms} ms:", { name: call.name, host: call.host, ms: call.ms })
-                    : t("{name} on {host} — failed, {ms} ms:", { name: call.name, host: call.host, ms: call.ms })} <span className="fi-hint">{call.result}</span></li>)}</ul>
+                    ? t("{name} on {host}: ok, {ms} ms:", { name: call.name, host: call.host, ms: call.ms })
+                    : t("{name} on {host}: failed, {ms} ms:", { name: call.name, host: call.host, ms: call.ms })} <span className="fi-hint">{call.result}</span></li>)}</ul>
                 </details>
               )}
               {run.sent && (

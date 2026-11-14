@@ -99,8 +99,8 @@ test("the dry-run picker reads this account's feed and names messages by sender 
   assert.equal(feedAccount("support@example.com"), "cloudflare:support@example.com");
   assert.equal(feedAccount("gmail:abc"), "gmail:abc");
   assert.equal(feedAccount("imap:x"), "imap:x");
-  assert.equal(previewLabel({ sender: "Customer <ana@shop.test>", subject: "Order 4412" }, tt), "Customer — Order 4412");
-  assert.equal(previewLabel({ sender: "ana@shop.test", subject: "" }, tt), "ana@shop.test — No subject");
+  assert.equal(previewLabel({ sender: "Customer <ana@shop.test>", subject: "Order 4412" }, tt), "Customer: Order 4412");
+  assert.equal(previewLabel({ sender: "ana@shop.test", subject: "" }, tt), "ana@shop.test: No subject");
 });
 
 test("a dry-run is said in a sentence: what would happen, and that nothing was done", () => {

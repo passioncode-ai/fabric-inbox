@@ -162,7 +162,7 @@ export function OutlookSetupWizard({ setup, onSaved }: { setup: MicrosoftSetup; 
           {t.rich("{title} API permissions → Add a permission → Microsoft Graph → {delegated}, then add each of these:", {
             title: <strong key="title">{t("Allow mail.")}</strong>,
             delegated: <strong key="delegated">{ENTRA_NAMES.delegated}</strong> })}
-          <ul>{setup.permissions.map((p) => <li key={p.name}><code>{p.name}</code> — {t.text(p.why)}</li>)}</ul>
+          <ul>{setup.permissions.map((p) => <li key={p.name}><code>{p.name}</code>: {t.text(p.why)}</li>)}</ul>
           <p className="fi-hint">{t.rich("None of them needs an administrator's consent ({link}). Some organizations still let only their administrators allow apps: Fabric Inbox then gives you a link to send to yours.", {
             link: <External key="link" href={setup.help.permissions}>Microsoft</External> })}</p>
         </li>
@@ -219,7 +219,7 @@ export function OutlookConnectStep({ setup, onReplace }: { setup?: MicrosoftSetu
   }
   return (
     <>
-      <p>{t("Microsoft's sign-in opens in your browser. Choose the account, read what Fabric Inbox asks for — reading, changing and sending your mail, while you are away too — and choose Accept. The account appears here when the browser says it is connected.")}</p>
+      <p>{t("Microsoft's sign-in opens in your browser. Choose the account, read what Fabric Inbox asks for (reading, changing and sending your mail, while you are away too) and choose Accept. The account appears here when the browser says it is connected.")}</p>
       <SecretExpiryNotice expiry={setup?.secretExpiry ?? null} />
       {setup?.addressMatches === false && (
         <div className="fi-callout is-warn" role="alert"><p>{t("Outlook is set up for {address}; connecting works only there. Open the app at that address, or set Outlook up again from here.", { address: setup.publicAppUrl ?? "" })}</p></div>

@@ -75,7 +75,7 @@ export function feedAccount(account: string): string {
 /** How a message is named in the dry-run picker: who sent it and its subject. */
 export function previewLabel(m: { sender: string; subject: string }, t: T): string {
   const who = m.sender.replace(/\s*<[^>]+>/, "").replace(/^"|"$/g, "") || m.sender;
-  return `${who} — ${m.subject || t("No subject")}`;
+  return `${who}: ${m.subject || t("No subject")}`;
 }
 /** A run's status in words; an unknown one shows as it came. */
 function runStatusText(status: string, t: T): string {

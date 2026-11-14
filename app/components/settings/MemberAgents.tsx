@@ -68,7 +68,7 @@ export function MemberAgents() {
             {label(accountId)}
             <select className="fi-input" aria-label={t("Who answers {mailbox}", { mailbox: label(accountId) })}
               value={currentAgent(agents.data.agents, accountId)} disabled={busy !== null} onChange={(e) => void choose(accountId, e.target.value)}>
-              <option value="off">{t("Off — I read it myself")}</option>
+              <option value="off">{t("Off: I read it myself")}</option>
               {agents.data.agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </label>

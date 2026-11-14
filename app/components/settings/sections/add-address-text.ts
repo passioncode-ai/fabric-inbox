@@ -54,7 +54,7 @@ function build(t: T) {
     policyAuto: (intents: string, limit: number | null) => limit === null
       ? t("Sends {intents} · no daily limit", { intents })
       : t("Sends {intents} · up to {limit} a day per address", { intents, limit }),
-    answerOff: t("Off — I read it myself"),
+    answerOff: t("Off: I read it myself"),
     answerOffHint: t("New mail stays for you; an agent can be chosen later."),
     signatureToggle: (who: string) => t("Add a signature to mail sent from {who}", { who }),
     signatureTheseAddresses: t("these addresses"),
@@ -116,7 +116,7 @@ function build(t: T) {
     createdToast: (created: number, all: number, domain: string) => t("{created} of {all} addresses were created on {domain}.", { created, all, domain }),
     tryAgain: t("Change and try again"),
     addAnother: t("Add another"),
-    doneOpen: (email: string) => t("Done — open {email}", { email }),
+    doneOpen: (email: string) => t("Done: open {email}", { email }),
     close: t("Close"),
     sendTest: t("Send a test message"),
     sendAgain: t("Send again"),

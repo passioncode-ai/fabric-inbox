@@ -108,7 +108,7 @@ test("a domain action is summed up in one sentence; a failed step says running i
   assert.match(stepsSummary("acme.com", [step("already")]), /already so/);
   assert.match(stepsSummary("acme.com", []), /nothing to do/);
   const failed = [step("done"), step("failed", "Bring addresses here")];
-  assert.match(stepsSummary("acme.com", failed), /not finished — Bring addresses here\. Detail\. Running it again continues/);
+  assert.match(stepsSummary("acme.com", failed), /not finished \(Bring addresses here\)\. Detail\. Running it again continues/);
   assert.equal(stepsFailed(failed), true);
   assert.equal(stepsFailed([step("done")]), false);
 });

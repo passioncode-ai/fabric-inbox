@@ -242,7 +242,7 @@ export function ErrorBoundary({ error }: { error: unknown }) {
 		<div className="flex items-center justify-center min-h-screen p-8">
 			<Empty
 				icon={<WarningIcon size={48} className="text-kumo-inactive" />}
-				title={status === 404 ? t("404 — Page not found") : title}
+				title={status === 404 ? t("404: Page not found") : title}
 				description={description}
 				contents={
 					<Button

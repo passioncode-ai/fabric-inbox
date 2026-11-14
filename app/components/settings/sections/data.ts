@@ -68,7 +68,7 @@ export const useStepMemory = () => useContext(StepMemory);
 
 /** "Off", the agent's name, or what an address still carries from an older version, in the language of `t`. */
 export function answererText(agent: ProjectAddresses["addresses"][number]["agent"], agentName: string | null, agents?: AgentList, t: T = englishT): string {
-  if (agent === "off") return t("Off — you read it");
+  if (agent === "off") return t("Off: you read it");
   if (agent === "legacy") return t("Drafts with its old prompt");
   return agentName ?? agents?.agents.find((a) => a.id === agent.id)?.name ?? t("A deleted agent (Off)");
 }
