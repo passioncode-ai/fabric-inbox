@@ -129,3 +129,40 @@ export function leftOutFiles(d: Draft): { file: Original; why: LeftOut["why"] }[
 export function safetyOf(d: Draft, sourceId: string | undefined) {
   return sourceId ? d.forwardSource?.files.find((f) => f.id === sourceId)?.safety : undefined;
 }
+
+/**
+ * Captures planned originals one at a time, checking each one's real bytes (K-1, second-model review
+ * of a6bd2ec9): a declared size can be wrong (no or a wrong Content-Length, a remote source's base64),
+ * so after `read` the real length is held against the room the draft had plus what this run already
+ * captured. One that no longer fits is left out as "no-room" instead of being attached; one that fits
+ * is captured at its real size, beside every reference already on the draft. A failed read or capture
+ * is kept and the next file goes on; a file never captured stays missing (Retry, Remove).
+ */
+export async function captureOriginals<Ref extends { size: number }>(
+  d: Draft,
+  files: readonly Original[],
+  io: {
+    read(file: Original): Promise<ArrayBuffer>;
+    capture(file: Original, bytes: ArrayBuffer, existing: readonly Ref[]): Promise<Ref[]>;
+  },
+  existing: readonly Ref[] = [],
+): Promise<{ captured: Ref[]; leftOut: LeftOut[]; failure?: unknown }> {
+  const room = roomLeft(d);
+  const captured: Ref[] = [];
+  const out: LeftOut[] = [];
+  let failure: unknown;
+  for (const file of files) {
+    try {
+      const bytes = await io.read(file);
+      const used = captured.reduce((n, r) => n + r.size, 0);
+      if (captured.length + 1 > room.files || used + bytes.byteLength > room.bytes) {
+        out.push({ id: file.id, why: "no-room" });
+        continue;
+      }
+      captured.push(...(await io.capture(file, bytes, [...existing, ...captured])));
+    } catch (error) {
+      failure = error;
+    }
+  }
+  return { captured, leftOut: out, ...(failure !== undefined ? { failure } : {}) };
+}

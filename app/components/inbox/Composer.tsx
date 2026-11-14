@@ -16,6 +16,7 @@ import {
 import { missingOriginals, prepareMessage } from "./compose-payload";
 import {
   applyPlan,
+  captureOriginals,
   dropForRetry,
   leaveOut,
   leftOutFiles,
@@ -315,58 +316,54 @@ export default function Composer({
         source.provider !== "cloudflare"
           ? `${accountPath(rawAccount(source.accountId))}/messages/${encodeURIComponent(source.originalId)}`
           : `/api/v1/mailboxes/${encodeURIComponent(rawAccount(source.accountId))}/emails/${encodeURIComponent(source.originalId)}`;
-      for (const file of plan.attach) {
-        const one: Parameters<typeof captureFiles>[2][number] = {
-          name: file.filename,
-          type: file.mimeType,
-          size: file.size,
-          sourceId: file.id,
-          arrayBuffer: async () => {
-            const path = `${prefix}/attachments/${encodeURIComponent(file.id)}`;
-            let bytes: ArrayBuffer;
-            if (source.provider !== "cloudflare") {
-              const result = await fabric<{ data: string }>(path);
-              if (typeof result.data !== "string")
-                throw new Error(t("The original file is unavailable."));
-              let content = result.data.replaceAll("-", "+").replaceAll("_", "/");
-              content += "=".repeat((4 - (content.length % 4)) % 4);
-              validateAttachments([
-                {
-                  content,
-                  filename: file.filename,
-                  type: file.mimeType || "application/octet-stream",
-                  disposition: "attachment",
-                },
-              ]);
-              bytes = Uint8Array.from(atob(content), (c) =>
-                c.charCodeAt(0),
-              ).buffer;
-            } else {
-              const response = await fetch(path, {
-                signal: AbortSignal.timeout(30_000),
-              });
-              if (!response.ok)
-                throw new Error(
-                  t("The original file could not be retrieved. Reconnect the source account and try again."),
-                );
-              if (
-                Number(response.headers.get("Content-Length")) >
-                MAX_ATTACHMENT_BYTES
-              )
-                throw new Error(t("An original file exceeds the 5 MiB limit."));
-              bytes = await response.arrayBuffer();
-            }
-            return bytes;
-          },
-        };
-        try {
-          await captureFiles(attachmentsOnDevice(), from.id, [one], [], {
-            stage: (refs) => onAddAttachments(from.id, refs),
-            complete: (done) => onCompleteAttachments(from.id, done),
-          });
-        } catch (error) {
-          failure = error;
+      // The bytes are read first, then held against the room at their real size (K-1): a declared size
+      // can be wrong, and what no longer fits is left out as did not fit instead of failing at send.
+      const read = async (file: (typeof plan.attach)[number]) => {
+        const path = `${prefix}/attachments/${encodeURIComponent(file.id)}`;
+        if (source.provider !== "cloudflare") {
+          const result = await fabric<{ data: string }>(path);
+          if (typeof result.data !== "string")
+            throw new Error(t("The original file is unavailable."));
+          let content = result.data.replaceAll("-", "+").replaceAll("_", "/");
+          content += "=".repeat((4 - (content.length % 4)) % 4);
+          validateAttachments([
+            {
+              content,
+              filename: file.filename,
+              type: file.mimeType || "application/octet-stream",
+              disposition: "attachment",
+            },
+          ]);
+          return Uint8Array.from(atob(content), (c) => c.charCodeAt(0)).buffer;
         }
+        const response = await fetch(path, { signal: AbortSignal.timeout(30_000) });
+        if (!response.ok)
+          throw new Error(
+            t("The original file could not be retrieved. Reconnect the source account and try again."),
+          );
+        if (Number(response.headers.get("Content-Length")) > MAX_ATTACHMENT_BYTES)
+          throw new Error(t("An original file exceeds the 5 MiB limit."));
+        return response.arrayBuffer();
+      };
+      const result = await captureOriginals(from, plan.attach, {
+        read,
+        capture: (file, bytes, existing) =>
+          captureFiles(
+            attachmentsOnDevice(),
+            from.id,
+            [{ name: file.filename, type: file.mimeType, size: bytes.byteLength, sourceId: file.id, arrayBuffer: async () => bytes }],
+            [...existing],
+            {
+              stage: (refs) => onAddAttachments(from.id, refs),
+              complete: (done) => onCompleteAttachments(from.id, done),
+            },
+          ),
+      }, from.attachments ?? []);
+      failure = result.failure;
+      if (result.leftOut.length) {
+        // The draft as it is after the captures above were saved and shown (as changeSender reads it).
+        onChange(applyPlan(latest.current, { attach: [], leftOut: result.leftOut }));
+        setNotice(t("No room left: remove a file first"));
       }
     } catch (error) {
       failure = error;

@@ -25,6 +25,7 @@ import {
 import { SendEmailRequestSchema } from "../workers/lib/schemas";
 import {
   applyPlan,
+  captureOriginals,
   dropForRetry,
   leaveOut,
   leftOutFiles,
@@ -417,6 +418,47 @@ test("an original that failed to load blocks Send until Retry or Remove", async 
   const saved = { ...d, serverFiles: [{ id: "s1", filename: "0.txt", mimetype: "text/plain", size: 7, sourceId: "one" }] };
   assert.deepEqual(removeServerFile(saved, "s1").leftOut, [{ id: "one", why: "removed" }]);
   assert.deepEqual(removeServerFile({ ...draft(), serverFiles: saved.serverFiles }, "s1").leftOut, undefined, "only a forward records it");
+});
+// K-1 (second-model review of a6bd2ec9): an original is held against the room at its real size.
+test("an original whose downloaded bytes exceed its declared size and no longer fit lands in did not fit", async () => {
+  const { files } = fixture();
+  const MiB = 1024 * 1024;
+  // Declared 1 MiB each beside 3 MiB of the person's own; the second really is 2 MiB.
+  const d = { ...threeOriginals([MiB, MiB, MiB]), serverFiles: [{ id: "own", filename: "own.bin", mimetype: "application/octet-stream", size: 3 * MiB }] };
+  const plan = planOriginals(d);
+  assert.deepEqual(plan.attach.map((f) => f.id), ["one", "two"], "by declared sizes two fit");
+  const real: Record<string, number> = { one: MiB, two: 2 * MiB };
+  const seen: number[] = [];
+  const result = await captureOriginals(d, plan.attach, {
+    read: async (f) => new ArrayBuffer(real[f.id]!),
+    capture: (f, bytes, existing) => {
+      seen.push(existing.length);
+      return captureFiles(files, "a", [{ name: f.filename, type: f.mimeType, size: bytes.byteLength, sourceId: f.id, arrayBuffer: async () => bytes }], [...existing]);
+    },
+  });
+  assert.deepEqual(result.captured.map((r) => r.sourceId), ["one"]);
+  assert.deepEqual(result.leftOut, [{ id: "two", why: "no-room" }]);
+  assert.equal(result.failure, undefined);
+  const ready = applyPlan({ ...d, attachments: result.captured }, { attach: [], leftOut: result.leftOut });
+  assert.deepEqual(leftOutFiles(ready).map((x) => [x.file.id, x.why]), [["two", "no-room"]]);
+  assert.equal(missingOriginals(ready).map((f) => f.id).join(), "three", "the third was not planned");
+  // Each capture sees every reference already on the draft and those this run captured; the real size is kept.
+  const two = await captureOriginals({ ...d, serverFiles: [] }, plan.attach, {
+    read: async (f) => new ArrayBuffer(real[f.id]!),
+    capture: (f, bytes, existing) => {
+      seen.push(existing.length);
+      return captureFiles(files, "a", [{ name: f.filename, type: f.mimeType, size: bytes.byteLength, sourceId: f.id, arrayBuffer: async () => bytes }], [...existing]);
+    },
+  }, result.captured);
+  assert.deepEqual(seen, [0, 1, 2]);
+  assert.deepEqual(two.captured.map((r) => r.size), [MiB, 2 * MiB]);
+  // A failed read leaves that original missing (Retry, Remove) and the next one still goes.
+  const flaky = await captureOriginals(threeOriginals(), threeOriginals().forwardSource!.files, {
+    read: async (f) => { if (f.id === "one") throw new Error("offline"); return new ArrayBuffer(7); },
+    capture: async (f, bytes) => [{ size: bytes.byteLength, sourceId: f.id }],
+  });
+  assert.deepEqual(flaky.captured.map((r) => r.sourceId), ["two", "three"]);
+  assert.match(String(flaky.failure), /offline/);
 });
 test("leftOut is sanitized, defaults to none for older drafts, and is part of the content key", async () => {
   const { store, storage, tab } = fixture();

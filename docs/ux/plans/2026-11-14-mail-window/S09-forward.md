@@ -72,6 +72,11 @@ Walked as a code read of the forward and send path, not in WebKit (see "Built as
   says why each file is out and offers Attach or Attach anyway. Every entry can be put back.
 - **"While they fit" fills greedily in order:** a file that does not fit is left out and a later, smaller one is still
   attached (4 MiB, 2 MiB, 0.5 MiB attaches the first and the third).
+- **Real sizes, not declared ones** (K-1, second-model review of `a6bd2ec9`). An original's bytes are read before it is
+  put on the draft, then held against the room the draft had plus what the same run already attached
+  (`captureOriginals`); one whose real bytes no longer fit (no or a wrong Content-Length, a remote source's base64) is
+  left out as did not fit, not attached to fail at send. Each capture is given every reference already on the draft.
+  A failed read leaves that original missing, shown as "Could not attach" with Retry and Remove.
 - **The safety chip waits for S03.** S03 is not built on this branch, so no file has a colour yet. The plan and the
   screen read an optional `safety` on each original (`green`, `grey`, `amber`, `red`); a red one is left out as
   dangerous, and the chip ("Checked", "Not checked", "Suspicious", "Dangerous") shows only where a colour is given.
