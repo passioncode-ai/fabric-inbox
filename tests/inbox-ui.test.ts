@@ -281,3 +281,13 @@ test("UI walk 2026-10-08: Reply all is offered only when it reaches more than th
   assert.match(reader, /const offersReplyAll = !!replyAll && \(replyAll\.cc !== "" \|\| replyAll\.to\.includes\(","\)\);/);
   assert.match(reader, /\{offersReplyAll && \(/);
 });
+
+test("B-266: the sidebar's search keeps a domain whole when its name matches, and matching addresses of other domains", async () => {
+  const { matchAccounts } = await import("../app/components/inbox/account-groups");
+  const a = (email: string, provider = "cloudflare", name = "") => ({ id: `${provider}:${email}`, provider, email, name, status: "connected" }) as never;
+  const accounts = [a("hello@bulk-sms.example"), a("support@bulk-sms.example"), a("sms-alerts@acme.example"), a("hello@acme.example"), a("me@gmail.example", "gmail", "Personal SMS")];
+  assert.deepEqual(matchAccounts(accounts, "  SMS ").map((x: { email: string }) => x.email),
+    ["hello@bulk-sms.example", "support@bulk-sms.example", "sms-alerts@acme.example", "me@gmail.example"]);
+  assert.equal(matchAccounts(accounts, "").length, accounts.length);
+  assert.deepEqual(matchAccounts(accounts, "nothing"), []);
+});

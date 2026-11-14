@@ -224,7 +224,7 @@ test("the unified inbox mounts the panel with an accessible header toggle (B11-0
   // The legacy mailbox page keeps its own panel.
   assert.match(readFileSync("app/routes/mailbox.tsx", "utf8"), /<AgentSidebar \/>/);
   // The column has room only on wide windows; elsewhere the sheet.
-  assert.match(readFileSync("app/styles/workbench.css", "utf8"), /@media \(min-width: 1400px\) \{\n  \.fi-app\.fi-agent-open \{ grid-template-columns: 232px minmax\(0, 1fr\) 360px; \}/);
+  assert.match(readFileSync("app/styles/workbench.css", "utf8"), /@media \(min-width: 1400px\) \{\n  \.fi-app\.fi-agent-open \{ grid-template-columns: var\(--fi-sidebar-width, 232px\) minmax\(0, 1fr\) 360px; \}/);
 });
 
 test("a failed tool call shows as failed, never with the success check", () => {

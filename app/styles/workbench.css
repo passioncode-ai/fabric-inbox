@@ -17,7 +17,9 @@ body {
 }
 .fi-app {
   display: grid;
-  grid-template-columns: 232px minmax(0, 1fr);
+  /* B-266: a width the person set wins over the default (`--fi-sidebar-width`, app/lib/column-width.ts). */
+  grid-template-columns: var(--fi-sidebar-width, 232px) minmax(0, 1fr);
+  position: relative;
   height: 100dvh;
   font-size: var(--pc-type-body);
   line-height: 1.5;
@@ -380,7 +382,8 @@ body {
 }
 .fi-content {
   display: grid;
-  grid-template-columns: 350px minmax(0, 1fr);
+  grid-template-columns: var(--fi-list-width, 350px) minmax(0, 1fr);
+  position: relative;
   flex: 1;
   min-height: 0;
 }
@@ -1155,7 +1158,7 @@ body {
 }
 @media (min-width: 1550px) {
   .fi-content {
-    grid-template-columns: 390px minmax(0, 1fr);
+    grid-template-columns: var(--fi-list-width, 390px) minmax(0, 1fr);
   }
   .fi-message-header,
   .fi-message-body {
@@ -1165,10 +1168,10 @@ body {
 }
 @media (max-width: 1150px) {
   .fi-app {
-    grid-template-columns: 205px minmax(0, 1fr);
+    grid-template-columns: var(--fi-sidebar-width, 205px) minmax(0, 1fr);
   }
   .fi-content {
-    grid-template-columns: 300px minmax(0, 1fr);
+    grid-template-columns: var(--fi-list-width, 300px) minmax(0, 1fr);
   }
   .fi-search {
     width: 210px;
@@ -1397,13 +1400,14 @@ body {
     padding-top: 5px;
     padding-bottom: 5px;
   }
-  /* .fi-sidebar raises specificity over the base rule further down, whose
-     min-height: 0 otherwise wins by order and lets the list shrink to a row. */
+  /* B-266: the addresses are part of the sidebar's one scroll, as long as they are: a box of their own showed about six
+     domains at a time between the folders and the bottom links. (.fi-sidebar raises specificity over the base rule.) */
   .fi-sidebar .fi-account-list {
-    flex: 1 1 auto;
-    min-height: min(190px, 30vh);
-    overflow: auto;
+    flex: 0 0 auto;
+    min-height: 0;
+    overflow: visible;
   }
+
   .fi-category-list {
     max-height: 24vh;
     overflow: auto;
@@ -1794,7 +1798,10 @@ body {
 }
 .fi-also-in { font-size: 10px; color: var(--pc-text-muted); }
 /* B-244 D-3 (SCN-099): the servers' tabs above the inbox and the mark of another server's message. */
-.fi-server-tabs { padding: 0 21px 8px; flex-wrap: wrap; row-gap: 6px; }
+/* B-266: the row sits in the mail list's column (a flex column), where `.fi-chip-row`'s `flex: 1 0 100%` made it take the
+   column's whole height: its wrapped lines stretched and every tab grew into a tall oval, pushing the mail out of view.
+   It is as tall as its tabs, and its lines and tabs keep their own height. */
+.fi-server-tabs { padding: 0 21px 8px; flex: 0 0 auto; flex-wrap: wrap; row-gap: 6px; align-content: flex-start; align-items: center; overflow: visible; }
 /* B-263: a tab is one line whatever the window's width; a long server name is cut (its full name is the title), and
    tabs that do not fit move to the next line whole, never growing into tall ovals. */
 .fi-server-tabs .fi-chip {
@@ -1866,7 +1873,7 @@ body {
    window is wide enough, a sheet from the right edge over the mail where it is not. */
 .fi-agent-toggle.is-active { background: var(--pc-panel); color: var(--pc-text); }
 @media (min-width: 1400px) {
-  .fi-app.fi-agent-open { grid-template-columns: 232px minmax(0, 1fr) 360px; }
+  .fi-app.fi-agent-open { grid-template-columns: var(--fi-sidebar-width, 232px) minmax(0, 1fr) 360px; }
 }
 .fi-agent-panel {
   display: flex;
@@ -1917,4 +1924,81 @@ body {
   font-size: 12px;
   color: var(--pc-muted);
   cursor: pointer;
+}
+
+/* ── Column edges the person drags (B-266, app/components/ColumnResizer.tsx) ─────────────────────── */
+.fi-col-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  z-index: 6;
+  cursor: col-resize;
+  touch-action: none;
+}
+.fi-col-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+.fi-col-resizer:hover::after,
+.fi-col-resizer:focus-visible::after,
+.fi-resizing .fi-col-resizer::after { left: 2px; width: 3px; background: var(--pc-border-strong); }
+.fi-app .fi-col-resizer:focus-visible { outline: none; }
+body.fi-resizing { cursor: col-resize; user-select: none; }
+@media (prefers-reduced-motion: reduce) { .fi-col-resizer::after { transition: none; } }
+/* One column on a narrow window: nothing to resize between. */
+@media (max-width: 930px) { .fi-content > .fi-col-resizer { display: none !important; } }
+@media (max-width: 550px) { .fi-app > .fi-col-resizer { display: none !important; } }
+
+/* ── Finding an address among many domains (B-266, SCN-042) ─────────────────────────────────────── */
+.fi-address-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 6px 6px;
+  padding: 0 6px 0 8px;
+  height: 28px;
+  border: 1px solid var(--pc-border);
+  border-radius: 8px;
+  background: var(--pc-bg);
+  color: var(--pc-text-muted);
+}
+.fi-address-search:focus-within { border-color: var(--pc-focus); box-shadow: 0 0 0 1px var(--pc-focus); }
+.fi-app .fi-address-search input:focus-visible { outline: none; }
+.fi-address-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pc-text);
+  font-size: 12px;
+  padding: 0;
+  outline: none;
+}
+.fi-address-search input::-webkit-search-cancel-button { display: none; }
+.fi-address-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--pc-text-muted);
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+}
+.fi-address-search-clear:hover { background: var(--pc-panel-raised); color: var(--pc-text); }
+/* Many addresses: the three ways to add one are icons in one row (their names on hover and for screen readers), so the
+   addresses keep the room. */
+.fi-add-links.is-compact { display: flex; gap: 4px; padding-top: 6px; }
+.fi-add-links.is-compact .fi-add-account { padding: 6px 8px; border-radius: 6px; }
+.fi-add-links.is-compact .fi-add-account:hover { background: var(--pc-panel-raised); }
+.fi-add-links.is-compact .fi-add-label {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }

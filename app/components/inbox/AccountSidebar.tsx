@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
-import { CaretDownIcon, CaretRightIcon, AtIcon, EnvelopeSimpleIcon, EyeIcon, EyeSlashIcon, GoogleLogoIcon, MicrosoftOutlookLogoIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, CaretRightIcon, AtIcon, EnvelopeSimpleIcon, EyeIcon, EyeSlashIcon, GoogleLogoIcon, MagnifyingGlassIcon, MicrosoftOutlookLogoIcon, XIcon } from "@phosphor-icons/react";
 import type { InboxAccount } from "./model";
 import { englishT, type T } from "../../../shared/i18n";
 import { useT } from "../../lib/i18n";
 import { escapeCancelsConfirmation } from "../../lib/mail-keys";
-import { addressLabel, groupAccounts, sidebarAccounts, type AddressFilter } from "./account-groups";
+import { addressLabel, FIND_FROM_GROUPS, groupAccounts, matchAccounts, sidebarAccounts, type AddressFilter } from "./account-groups";
 
 interface Props {
   accounts: InboxAccount[];
@@ -58,8 +58,13 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
     setFilterState(f);
     try { localStorage.setItem(FILTER_KEY, f); } catch { /* per-device convenience only */ }
   };
+  const [query, setQuery] = useState("");
+  const searching = query.trim() !== "";
   const { visible, hidden: hiddenAccounts, withoutMail } = sidebarAccounts(accounts, { filter, hidden, selectedId: accountId });
-  const groups = groupAccounts(visible, t);
+  // B-266: many domains get a field to find one; a search looks through every address that is not hidden, listed or not.
+  const findable = groupAccounts(sidebarAccounts(accounts, { filter: "all", hidden }).visible, t).length > FIND_FROM_GROUPS;
+  const searched = searching ? matchAccounts(sidebarAccounts(accounts, { filter: "all", hidden }).visible, query) : visible;
+  const groups = groupAccounts(searched, t);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [hiddenOpen, setHiddenOpen] = useState(false);
   const [confirmHideEmpty, setConfirmHideEmpty] = useState(false);
@@ -97,13 +102,13 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
   }, [selectedGroup]);
   // Only the caret opens and closes a group; the name selects the whole domain and nothing else.
   const isOpen = (key: string, list: InboxAccount[]) =>
-    small || open.has(key) || list.some((a) => a.id === accountId);
+    small || searching || open.has(key) || list.some((a) => a.id === accountId);
   const toggle = (key: string) => setOpen((current) => {
     const next = new Set(current);
     if (next.has(key)) next.delete(key); else next.add(key);
     return next;
   });
-  const notListed = filter === "mail" ? withoutMail.filter((a) => a.id !== accountId).length : 0;
+  const notListed = filter === "mail" && !searching ? withoutMail.filter((a) => a.id !== accountId).length : 0;
   return (
     <>
       <div className="fi-section-label">
@@ -116,6 +121,20 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
           <button type="button" aria-pressed={filter === "all"} onClick={() => setFilter("all")}>{t("All")}</button>
         </div>
       )}
+      {findable && (
+        <div className="fi-address-search" role="search">
+          <MagnifyingGlassIcon size={13} aria-hidden="true" />
+          <input type="search" value={query} placeholder={t("Find an address or domain")} aria-label={t("Find an address or domain")}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Escape" && query) { e.preventDefault(); e.stopPropagation(); setQuery(""); } }} />
+          {searching && (
+            <button type="button" className="fi-address-search-clear" aria-label={t("Clear the search")} onClick={() => setQuery("")}>
+              <XIcon size={12} aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      )}
+      {searching && !groups.length && <p className="fi-sidebar-empty" role="status">{t("No address or domain matches “{query}”.", { query: query.trim() })}</p>}
       <nav ref={nav} className="fi-account-list" aria-label={t("Addresses by domain")}>
         {groups.map((g) => {
           const expanded = isOpen(g.key, g.accounts);
@@ -220,10 +239,10 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
         </div>
       )}
       {canManage ? (
-        <div className="fi-add-links">
-          <Link className="fi-add-account" to="/settings/addresses?add=1"><AtIcon size={15} /> {t("Add address")}</Link>
-          <Link className="fi-add-account" to="/settings/accounts?connect=gmail"><GoogleLogoIcon size={15} /> {t("Connect Gmail")}</Link>
-          <Link className="fi-add-account" to="/settings/accounts?connect=imap"><EnvelopeSimpleIcon size={15} /> {t("Connect other mail")}</Link>
+        <div className={"fi-add-links" + (findable ? " is-compact" : "")}>
+          <Link className="fi-add-account" to="/settings/addresses?add=1" title={findable ? t("Add address") : undefined}><AtIcon size={15} aria-hidden="true" /> <span className="fi-add-label">{t("Add address")}</span></Link>
+          <Link className="fi-add-account" to="/settings/accounts?connect=gmail" title={findable ? t("Connect Gmail") : undefined}><GoogleLogoIcon size={15} aria-hidden="true" /> <span className="fi-add-label">{t("Connect Gmail")}</span></Link>
+          <Link className="fi-add-account" to="/settings/accounts?connect=imap" title={findable ? t("Connect other mail") : undefined}><EnvelopeSimpleIcon size={15} aria-hidden="true" /> <span className="fi-add-label">{t("Connect other mail")}</span></Link>
         </div>
       ) : (
         <p className="fi-sidebar-empty">{t("You see the mailboxes this server's administrator gave you.")}</p>

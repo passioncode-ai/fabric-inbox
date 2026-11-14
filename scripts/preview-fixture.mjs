@@ -23,6 +23,18 @@ const accounts = [
     status: "connected",
   },
 ];
+// PREVIEW_MANY=1: an owner with many domains, long names and a few addresses each (the sidebar with 30 domains).
+if (process.env.PREVIEW_MANY === "1") {
+  const names = ["acme.example", "bulk-messages-and-notifications.example", "data-checks-analytics.example", "fabric-project.example",
+    "support-desk-for-a-long-product-name.example", "prompt-arena.example", "acme-very-long-product-name-for-testing.example", "studio.example",
+    "billing-and-invoices.example", "northwind.example", "contoso-support.example", "fabrikam.example", "tailspin-toys.example", "wingtip.example",
+    "adventure-works.example", "litware.example", "proseware.example", "lucerne-publishing.example", "margies-travel.example",
+    "coho-vineyard.example", "fourth-coffee.example", "graphic-design-institute.example", "humongous-insurance.example", "relecloud.example",
+    "southridge-video.example", "trey-research.example", "woodgrove-bank.example", "alpine-ski-house.example", "blue-yonder-airlines.example",
+    "city-power-and-light.example", "consolidated-messenger.example", "datum-corporation.example"];
+  for (const [i, d] of names.entries()) for (const local of i % 3 ? ["hello", "support"] : ["hello", "support", "billing", "no-reply-notifications"])
+    accounts.push({ id: `cloudflare:${local}@${d}`, provider: "cloudflare", email: `${local}@${d}`, name: "", status: "connected", unread: (i * 7 + local.length) % 5 === 0 ? (i % 9) + 1 : 0, total: local === "no-reply-notifications" ? 0 : 3 });
+}
 const rows = [
   [
     "Maya Chen",
