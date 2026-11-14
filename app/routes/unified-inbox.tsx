@@ -1608,9 +1608,6 @@ export default function UnifiedInbox() {
                             {selected.provider === "cloudflare"
                               ? "CLOUDFLARE"
                               : (owner?.providerName ?? (selected.provider === "gmail" ? "Gmail" : "IMAP")).toUpperCase()}
-                            <span className="fi-account-pill">
-                              {owner?.email ?? rawAccount(selected.accountId)}
-                            </span>
                           </span>
                           <h2>{detail.data.subject || t("(No subject)")}</h2>
                           {selected.discardReason && (
@@ -1619,7 +1616,7 @@ export default function UnifiedInbox() {
                               {restoredRules.length === 0 && <Link to={settingsPath("discard")}>{TT.bannerLink}</Link>}
                             </p>
                           )}
-                          <MessageHeader message={detail.data} own={owner?.email} catchAll={owner?.catchAll}
+                          <MessageHeader message={detail.data} own={owner?.email ?? rawAccount(selected.accountId)} catchAll={owner?.catchAll}
                             provider={selected.provider === "cloudflare" ? "Cloudflare" : (owner?.providerName ?? (selected.provider === "gmail" ? "Gmail" : "IMAP"))}
                             headersPath={isRemote(selected.provider) ? `${messagePath(selected)}/headers` : undefined}
                             fetchJson={(url) => fabric(url)} />

@@ -2032,7 +2032,11 @@ body.fi-resizing { cursor: col-resize; user-select: none; }
 .fi-people > div:first-child dd {
   font-weight: 600;
 }
-.fi-address {
+.fi-recipient {
+  display: inline;
+}
+.fi-person-address {
+  display: inline;
   font: inherit;
   color: inherit;
   background: none;
@@ -2042,8 +2046,8 @@ body.fi-resizing { cursor: col-resize; user-select: none; }
   cursor: copy;
   overflow-wrap: anywhere;
 }
-.fi-address:hover,
-.fi-address:focus-visible {
+.fi-person-address:hover,
+.fi-person-address:focus-visible {
   text-decoration: underline;
 }
 .fi-you {

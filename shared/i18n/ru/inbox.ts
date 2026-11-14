@@ -376,4 +376,5 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"Your address is not in To or Cc": "Вашего адреса нет в «Кому» и «Копия»",
 	"and {n} more": "и ещё {n}",
 	"Copy {address}": "Скопировать {address}",
+	"Received at": "Получено на",
 };

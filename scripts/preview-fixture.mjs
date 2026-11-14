@@ -124,6 +124,10 @@ let messages = rows.map(([sender, subject, snippet, a], i) => ({
   folder: "inbox",
   threadId: "thread-" + i,
 }));
+// S02 (B-268): a message with Cc and a long To list, one whose Reply-To differs, one sent to a list we are not named on.
+Object.assign(messages[2], { cc: "Sam Park <sam@example.net>, Kim Ito <kim@example.net>", recipient: "hello@example.com, Ana <ana@example.net>, Bo <bo@example.net>, Cy <cy@example.net>, Di <di@example.net>" });
+Object.assign(messages[4], { raw_headers: JSON.stringify([{ key: "reply-to", value: "Billing desk <billing@other.example>" }, { key: "list-id", value: "" }].slice(0, 1)) });
+Object.assign(messages[5], { recipient: "readers@example.net", raw_headers: JSON.stringify([{ key: "from", value: "Newsletter <news@example.net>" }]) });
 // B-138: a conversation the reply agent answered, then a newer message nobody answered; and marks.
 const STATES = { "message-0": "new_after_agent", "message-3": "agent_replied", "message-7": "error" };
 for (const m of messages) if (STATES[m.providerMessageId]) m.agentState = STATES[m.providerMessageId];

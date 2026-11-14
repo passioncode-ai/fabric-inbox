@@ -56,6 +56,12 @@ export default function MessageHeader({ message, own, provider, catchAll, header
             <dd><Address text={facts.replyTo} /></dd>
           </div>
         )}
+        {own && ![...facts.to, ...facts.cc, ...facts.bcc].some((r) => r.you) && (
+          <div>
+            <dt>{t("Received at")}</dt>
+            <dd>{own} · {provider}</dd>
+          </div>
+        )}
         {facts.notAddressed && <p className="fi-people-note">{t("Your address is not in To or Cc")}</p>}
       </dl>
       {validDate && (
@@ -99,7 +105,7 @@ function Address({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   const bare = text.match(/<([^<>]+)>/)?.[1] ?? text;
   return (
-    <button type="button" className="fi-address" title={t("Copy {address}", { address: bare })}
+    <button type="button" className="fi-person-address" title={t("Copy {address}", { address: bare })}
       onClick={() => {
         void navigator.clipboard?.writeText(bare).then(() => {
           setCopied(true);
