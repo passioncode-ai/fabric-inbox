@@ -147,8 +147,10 @@ Inbox's answers to fabric-workspace's board thread `16093ded`; the rules live in
   `fabric-agents:fabric-agents`, or `python3 tools/audit.py consult "<need>"` in the agents database). At each release
   run `audit.py scan <checkout>` and keep the result in [docs/evidence/architect/](docs/evidence/architect/); the judged
   half writes into the base's repository, so it is asked of the base (G30). First scan, 2026-11-13 on `3d5fcf40`:
-  `agent-host` 21.572, `support-answerer` 16.29 ([scan](docs/evidence/architect/2026-11-13-scan.json)); no judged
-  verdict yet, so no blocking gap is named.
+  `agent-host` 21.572, `support-answerer` 16.29 ([scan](docs/evidence/architect/2026-11-13-scan.json)). The architect
+  advises, it never gates (the operator, 2026-11-14, relayed on the board in `c419e464`): the consult is a lookup in the
+  same turn, a scan or judged audit's finding becomes a board row fixed by priority, and no release, deploy or change
+  waits for a verdict.
 - **Step 0 before every change** (fabric-workspace `knowledge/rules.md` §0, North Star principle 12): the workstation
   first: `npx --yes sshlg-skills@latest update`, `npx @passioncode-ai/passioncode doctor` with no `fail`, the board
   (`com.status`), Dashboards, Switchboard and Observatory answering. Without them, no change. Every change goes through
