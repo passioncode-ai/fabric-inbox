@@ -6,6 +6,7 @@ import { senderAuth, senderIdentity, replyPath, addresses } from "../workers/saf
 import { extractLinks, checkLinks } from "../workers/safety/links";
 import { buildCheck, checkHeaders, reviewOwed } from "../workers/safety/verdict";
 import { validateReview, fence, normalise } from "../workers/safety/check-review";
+import { acceptFrameLink } from "../app/lib/link-guard";
 import { colourOf, canonicalLink, guardsLinks, linkDecision, REVIEW_CODES, RAISING_CODES, type MailCheck, type SafetyLikeRecord, type ReaderLink } from "../shared/mail/safety";
 import type { SafetyFindings } from "../workers/safety/check";
 
@@ -213,7 +214,8 @@ test("the review only raises: every code against every colour lowers nothing, an
 test("the review's answer is validated: codes, quotes found in the message, and nothing else", () => {
   const text = "Your account is locked. Sign in at the portal within 24 hours.";
   assert.deepEqual(validateReview({ codes: ["looks_like_phishing"], quotes: ["Sign in at the portal"] }, text), { codes: ["looks_like_phishing"], quotes: ["Sign in at the portal"] });
-  assert.deepEqual(validateReview({ codes: ["looks_like_phishing"], quotes: ["Wire the money now"] }, text), { codes: ["looks_like_phishing"], quotes: [] }, "a quote not in the message is dropped");
+  assert.equal(validateReview({ codes: ["looks_like_phishing"], quotes: ["Wire the money now"] }, text), null, "K-7: a quote not in the message drops the answer whole");
+  assert.equal(validateReview({ codes: ["looks_like_phishing"], quotes: ["Sign in at the portal", "Wire the money now"] }, text), null, "one bad quote of two is enough");
   assert.equal(validateReview({ codes: ["severity_none"], quotes: [] }, text), null, "an unknown code drops the answer");
   assert.equal(validateReview({ verdict: "safe" }, text), null);
   assert.equal(validateReview({ codes: ["unsure", "urgent_payment"], quotes: [] }, text), null, "a contradicting pair");
@@ -282,3 +284,56 @@ test("S04 canonical links: odd forms ask on a green message; a link in the recor
   assert.equal(canonicalLink("https://[::bad").url, null);
   assert.equal(canonicalLink("https&#58;//bank.example").url, "https://bank.example/");
 });
+
+// Review round of bff1c0e2 (K-1..K-9).
+import { modelOnly } from "../workers/safety/check";
+import { showsOkLine, downloadAskKey } from "../app/components/inbox/safety-words";
+
+test("K-3: once a check exists its own notRun and feed version say whether links are complete, not the arrival's feed key", () => {
+  const fresh = check();
+  const r = rec(fresh, { feed: "stale" });
+  assert.deepEqual([colourOf(r, 7).colour, colourOf(r, 7).linksComplete], ["green", true], "a fresh recheck after a stale arrival is green");
+  assert.equal(colourOf(rec(check({ feed: { version: 7, state: "stale" } }), { feed: "stale" }), 7).linksComplete, false);
+});
+
+test("K-4: the held review's release needs the light model as the only signal of every check", () => {
+  const f = (over: Partial<Parameters<typeof buildCheck>[0]> = {}) => { const x = findings({ model: true }); x.check = check({ findings: x, ...over }); return x; };
+  assert.equal(modelOnly(f()), true);
+  assert.equal(modelOnly(f({ headers: [cfAuth("dmarc=fail header.from=acme.example policy.dmarc=reject")] })), false, "an enforcing DMARC fail waits for a person");
+  assert.equal(modelOnly(f({ replyTo: "pay@collect.example" })), false);
+  assert.equal(modelOnly(f({ links: [{ url: "https://e.example/", host: "e.example", why: "textMismatch", shown: "b.example" }] })), false);
+  assert.equal(modelOnly(f({ files: [{ id: "a", filename: "a.html", size: 1, checked: true, codes: ["webPage"], colour: "amber" }] })), false);
+});
+
+test("K-6: a browser that cannot say the click was the person's opens nothing", () => {
+  assert.equal(acceptFrameLinkForTest(undefined), undefined);
+  assert.equal(acceptFrameLinkForTest({ isActive: true }), 0);
+});
+
+test("K-9: the links' all-clear line never sits beside a line saying the links check did not run", () => {
+  assert.equal(showsOkLine("links", check(), true), true);
+  assert.equal(showsOkLine("links", check({ feed: { version: 7, state: "stale" } }), true), false);
+  assert.equal(showsOkLine("links", check(), false), false, "checked against an older feed");
+  assert.equal(showsOkLine("senderAuth", check({ provider: "imap" }), true), false);
+});
+
+test("K-8: a download asked once is remembered per account, message and attachment", () => {
+  assert.notEqual(downloadAskKey("gmail:a", "m1", "att"), downloadAskKey("gmail:a", "m2", "att"));
+  assert.notEqual(downloadAskKey("gmail:a", "m1", "att"), downloadAskKey("gmail:b", "m1", "att"));
+  assert.equal(downloadAskKey("gmail:a", "m1", "att"), downloadAskKey("gmail:a", "m1", "att"));
+});
+
+test("K-1: every attachment's name and type reaches the check; only the bytes stop at ten", async () => {
+  const { readFileSync } = await import("node:fs");
+  assert.doesNotMatch(readFileSync("workers/durableObject/index.ts", "utf8"), /files: attachments\.slice\(0, 20\)/);
+  assert.doesNotMatch(readFileSync("workers/providers/account-service.ts", "utf8"), /attachedFiles = [\s\S]{0,200}\.slice\(0, 20\)/);
+  assert.doesNotMatch(readFileSync("workers/routes/safety.ts", "utf8"), /providerAttachmentId\)\.slice\(0, 20\)/);
+  const many = Array.from({ length: 21 }, (_, i) => file(i === 20 ? "run.exe" : `f${i}.pdf`));
+  const out = await judgeFiles(many, async () => slicesOf(bytes("%PDF-1.7\nxxxxxx")), false);
+  assert.deepEqual([out.length, out[20]!.why, out[20]!.colour], [21, "capReached", "red"], "a program past the tenth is red by its name");
+});
+
+function acceptFrameLinkForTest(activation: { isActive: boolean } | undefined) {
+  const frame = {};
+  return acceptFrameLink({ source: frame, data: { type: "okolos-link", index: 0, nonce: "n" } }, frame, "n", 1, activation);
+}

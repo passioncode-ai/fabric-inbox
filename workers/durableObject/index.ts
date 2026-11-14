@@ -1632,7 +1632,8 @@ export class MailboxDO extends DurableObject<Env> {
         discard_reason: discard, discarded_at: discard ? now : null, ...(discard ? { read: true } : {}) }, attachments);
       this.incoming.record(mailboxId, { id: email.id, sender: email.sender, subject: email.subject,
         body: email.body, date: email.date, thread_id: email.thread_id,
-        ...(attachments.length ? { files: attachments.slice(0, 20).map((a) => ({ id: a.id, filename: a.filename, mimetype: a.mimetype, size: a.size })) } : {}),
+        // K-1: every attachment's name and type (the check judges at most 10 by their bytes, the rest by name).
+        ...(attachments.length ? { files: attachments.map((a) => ({ id: a.id, filename: a.filename, mimetype: a.mimetype, size: a.size })) } : {}),
         // S03 (B-269): the receiver's lines and the From and Reply-To, for the safety check's sender checks.
         ...(storedCheckHeaders(email.raw_headers).length ? { headers: storedCheckHeaders(email.raw_headers) } : {}),
         ...(spam ? { spam: true } : discard ? { discarded: true }

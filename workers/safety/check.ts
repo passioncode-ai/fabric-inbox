@@ -74,9 +74,14 @@ export function suspect(f: SafetyFindings): boolean {
 
 /**
  * S03 §3 (round 5, KIMI-32): the held review may release a message only when the light model's YES was its sole
- * reason. Any Okolos signal, a listed or lookalike link, or a file that runs code waits for a person.
+ * reason. Any Okolos signal, a listed or lookalike link, or a file that runs code waits for a person; so does any
+ * signal of the six checks other than the light model's own (K-4: an enforcing DMARC fail, a lookalike From, a link
+ * whose text names another domain, a risky file).
  */
 export function modelOnly(f: SafetyFindings): boolean {
+  const check = f.check;
+  const checksQuiet = !check || (check.signals.every((s) => s.code === "inboxModelFlagged")
+    && !check.links.some((l) => !!l.why) && !check.files.some((x) => x.colour === "red" || x.colour === "amber"));
   return f.model && !f.modelError && !f.visibleStrong.length && !f.hiddenSignals.length && !f.fileSignals?.length && !f.phishing?.length
-    && !f.lookalikes?.length && !f.riskyFiles?.length && !f.disguisedFiles?.length;
+    && !f.lookalikes?.length && !f.riskyFiles?.length && !f.disguisedFiles?.length && checksQuiet;
 }

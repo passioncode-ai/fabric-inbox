@@ -101,7 +101,7 @@ safetyRouter.post("/api/safety/check", async (c) => {
         ? await accounts.getHeaders(remote.id, messageId).then((h) => checkHeaders(h.headers), () => []) : [];
       input = { subject: m.subject, html: m.html || textToHtml(m.text || ""), sender: m.from, timestamp: m.timestamp || Date.now(), fromLine: m.from,
         replyToLine: m.replyTo || null, headers: headers.filter((h) => h.key === "authentication-results" || h.key === "received"),
-        files: (m.attachments ?? []).filter((a) => !a.inline && a.providerAttachmentId).slice(0, 20)
+        files: (m.attachments ?? []).filter((a) => !a.inline && a.providerAttachmentId)
           .map((a) => ({ id: a.providerAttachmentId, filename: a.filename || "attachment", mimetype: a.mimeType || "application/octet-stream", size: a.size || 0 })),
         scope: sent ? "links" : "received" };
     }

@@ -103,4 +103,6 @@ click, a modifier click, Enter, a drag, or the desktop menu: there is nothing to
 - **The frame script** also answers Space and stops a drag of a guarded link; it runs from the frame's head, after its
   CSP.
 - **A link's text names another domain** only when the text is itself an address (a host or a URL).
+- **User activation is required outright** (K-6): a browser that cannot say whether the click was the person's opens
+  nothing from a guarded link.
 - The WebKit walk (red, amber, green link by click, middle click and Enter) is not done in this unit (W4 audit).

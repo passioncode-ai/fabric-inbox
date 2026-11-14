@@ -125,7 +125,9 @@ export function colourOf(record: SafetyLikeRecord | null | undefined, currentFee
   const released = record.state === "released"
     ? (record.decidedBy ?? "").startsWith("person:") ? "person" as const : "review" as const : undefined;
   const withRelease = (c: Omit<SafetyColour, "released">): SafetyColour => released ? { ...c, released } : c;
-  const linksComplete = !!check && !check.notRun.some((n) => n.check === "links") && !f.feed
+  // K-3: completeness is the check's own (its notRun and its feed version): the arrival's legacy `feed` key, which a
+  // recheck keeps, says how the feed stood then, not now.
+  const linksComplete = !!check && !check.notRun.some((n) => n.check === "links")
     && check.feedVersion !== null && (currentFeedVersion === null || check.feedVersion >= currentFeedVersion);
 
   // Red: the floors.

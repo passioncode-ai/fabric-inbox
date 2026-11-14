@@ -278,3 +278,11 @@ Where the build differs from the text above, the safest reversible reading of th
   no message).
 - **Prompts:** the held review's prompt is locked as shipped (`prompt:safety-held-review`) and the new one ships as
   `prompt:safety-check-review/1` (R28).
+- **After the code review of `bff1c0e2`:** every attachment's name and type reaches the check (no cap of 20); the bytes
+  of the first 10 are read and the rest are "not checked (more than 10 files)", red by name when the name runs code,
+  grey and asking once before they download otherwise (K-1). The hold reads the final link and file results, so a
+  feed-listed or lookalike link found only in its canonical form holds the message (K-2). Once a record has a check,
+  whether its links are complete is the check's own (K-3). The held review releases only when the light model is the
+  only signal of every check (K-4). Turning documents into text is charged to the review's budget and the sender
+  domain's cap first; with none left they stay unread, said in `notRun` (K-5). A review with any quote not found in
+  the message is dropped whole (K-7).

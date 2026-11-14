@@ -63,7 +63,7 @@ import AgentDraftCard, { RetiredDraftNotice, type TuneRequest } from "~/componen
 import AgentRunPanel from "~/components/inbox/AgentRunPanel";
 import HeldPanel from "~/components/inbox/HeldPanel";
 import SafetyBadge from "~/components/inbox/SafetyBadge";
-import { downloadQuestion } from "~/components/inbox/safety-words";
+import { downloadAskKey, downloadQuestion } from "~/components/inbox/safety-words";
 import { changeSpam } from "~/components/inbox/MessageActions";
 import { colourOf, type FileEntry, type SafetyLikeRecord } from "../../shared/mail/safety";
 import { UNCHECKED } from "~/lib/link-guard";
@@ -1034,9 +1034,11 @@ export default function UnifiedInbox() {
     // S03 §5: an amber file asks once; a red one downloads only through "Save anyway" in the safety panel.
     const entry = safetyFiles.get(a.id);
     if (entry?.colour === "red" && !override) return;
-    if (entry?.colour === "amber" && !askedFiles.current.has(a.id)) {
+    // K-1: a file the check did not read (past the tenth, too large) asks once too. K-8: remembered per message.
+    const askKey = downloadAskKey(selected.accountId, selected.providerMessageId, a.id);
+    if (entry && !override && (entry.colour === "amber" || (entry.colour === "grey" && !entry.checked)) && !askedFiles.current.has(askKey)) {
       if (!window.confirm(downloadQuestion(entry, t))) return;
-      askedFiles.current.add(a.id);
+      askedFiles.current.add(askKey);
     }
     const risky = entry?.colour === "red" || entry?.colour === "amber";
     const query = override ? "?override=1" : "";

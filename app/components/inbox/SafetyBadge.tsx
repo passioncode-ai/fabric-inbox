@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ShieldCheckIcon, ShieldWarningIcon, ShieldSlashIcon, ShieldIcon } from "@phosphor-icons/react";
 import { useT } from "~/lib/i18n";
 import { CHECKS, type CheckName, type FileEntry, type SafetyColour, type SafetyLikeRecord } from "../../../shared/mail/safety";
-import { badgeWords, fileWords, notRunWords, reviewNotRunWords, reviewWords, signalWords } from "./safety-words";
+import { badgeWords, fileWords, notRunWords, reviewNotRunWords, reviewWords, showsOkLine, signalWords } from "./safety-words";
 
 /**
  * S03 (B-269, B-222): the Okolos badge at the right of the subject line, and its panel. The badge is a button with
@@ -63,7 +63,7 @@ export default function SafetyBadge({ colour, record, failed, checking, onReport
                   const signals = fired(name).map((s) => signalWords(s, t)).filter(Boolean);
                   if (name === "attachments") return signals.length ? signals.map((w, i) => <li key={`${name}-${i}`} className="is-fired">{w}</li>) : null;
                   if (signals.length) return signals.map((w, i) => <li key={`${name}-${i}`} className="is-fired">{w}</li>);
-                  if (skipped(name).length && name !== "links") return null;
+                  if (!showsOkLine(name, check, colour.linksComplete)) return null;
                   return <li key={name}>{okLine(name)}</li>;
                 })}
               </ul>

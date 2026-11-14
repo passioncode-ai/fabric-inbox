@@ -389,3 +389,89 @@ test("S03 R6-1: the open-time check never changes a state, even when an arrival'
     assert.deepEqual(raced.findings.hiddenSignals, ["planted"]);
   } finally { await mf.dispose(); }
 });
+
+// Review round of bff1c0e2: K-1, K-2, K-3, K-4, K-5 in workerd.
+async function signedFeed(entries: string[]) {
+  const { webcrypto } = await import("node:crypto");
+  const { serialiseUpdate } = await import("../vendor/okolos/core-feeds/apply");
+  const keys = await webcrypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]) as CryptoKeyPair;
+  const publicKey = Buffer.from(await webcrypto.subtle.exportKey("raw", keys.publicKey)).toString("base64");
+  const update = { kind: "snapshot", body: { name: "phishing", version: 9, updatedAt: "2026-11-14T00:00:00Z", entries } } as const;
+  const signature = Buffer.from(await webcrypto.subtle.sign({ name: "Ed25519" }, keys.privateKey, new TextEncoder().encode(serialiseUpdate(update as never)))).toString("base64");
+  return { publicKey, value: JSON.stringify({ update, signature }) };
+}
+
+test("K-1: a program named past the twentieth attachment holds the message and has its own entry", async () => {
+  const { mf, call } = await fixture();
+  try {
+    const files = Array.from({ length: 21 }, (_, i) => ({ id: `f${i}`, filename: i === 20 ? "run.exe" : `doc${i}.txt`, mimetype: "text/plain", size: 10 }));
+    for (const f of files.slice(0, 10)) await call("putFile", { key: `attachments/many/${f.id}/${f.filename}`, text: "plain words here" });
+    await call("ingest", { account: CF, event: event("many", "<p>Files.</p>", { files }) });
+    const r = (await call("of", { keys: [{ accountId: CF.id, messageId: "many" }] }))[`${CF.id}|many`];
+    assert.equal(r.state, "held");
+    assert.deepEqual(r.findings.riskyFiles, ["run.exe"]);
+    assert.equal(r.findings.check.files.length, 21);
+    assert.deepEqual([r.findings.check.files[20].why, r.findings.check.files[20].colour], ["capReached", "red"]);
+    assert.deepEqual([r.findings.check.files[15].why, r.findings.check.files[15].colour], ["capReached", "grey"]);
+  } finally { await mf.dispose(); }
+});
+
+test("K-2: an entity-encoded link to a feed-listed site holds the message on arrival", async () => {
+  const feed = await signedFeed(["login-bank.invalid"]);
+  const { mf, call } = await fixture({ AI: {}, OKOLOS_FEED_URL: "https://feed.invalid/feeds/phishing", OKOLOS_FEED_PUBLIC_KEY: feed.publicKey });
+  try {
+    await call("set", { key: "test:feed", value: feed.value });
+    await call("ingest", { account: CF, event: event("enc", '<p>Locked. <a href="https&#58;//secure.login-bank.invalid/verify">Unlock</a></p>') });
+    const r = (await call("of", { keys: [{ accountId: CF.id, messageId: "enc" }] }))[`${CF.id}|enc`];
+    assert.deepEqual([r.state, r.review], ["held", null]);
+    assert.deepEqual(r.findings.phishing.map((p: any) => p.host), ["secure.login-bank.invalid"]);
+    assert.deepEqual(await call("released"), []);
+  } finally { await mf.dispose(); }
+});
+
+test("K-3: a message that arrived with no feed is green after a recheck against a fresh one", async () => {
+  const feed = await signedFeed(["login-bank.invalid"]);
+  const { mf, call } = await fixture({ AI: {}, OKOLOS_FEED_URL: "https://feed.invalid/feeds/phishing", OKOLOS_FEED_PUBLIC_KEY: feed.publicKey });
+  const auth = { key: "authentication-results", value: "mx.cloudflare.net; dkim=pass header.d=acme.example; dmarc=pass header.from=acme.example policy.dmarc=reject; spf=pass" };
+  try {
+    await call("ingest", { account: CF, event: event("late", '<p><a href="https://acme.example/">Shop</a></p>', { headers: [auth, { key: "from", value: "Ann <ann@acme.example>" }] }) });
+    const key = { accountId: CF.id, messageId: "late" };
+    assert.equal((await call("colours", { keys: [key] }))[`${CF.id}|late`].colour, "grey", "no feed at arrival");
+    await call("set", { key: "test:feed", value: feed.value });
+    await call("set", { key: "okolos:tried", value: 0 });
+    await call("recheck", { key, input: { subject: "Hello", html: '<p><a href="https://acme.example/">Shop</a></p>', fromLine: "Ann <ann@acme.example>", sender: "ann@acme.example",
+      timestamp: 1, scope: "received", headers: [auth] } });
+    const c = (await call("colours", { keys: [key] }))[`${CF.id}|late`];
+    assert.deepEqual([c.colour, c.label, c.linksComplete], ["green", "checked", true]);
+  } finally { await mf.dispose(); }
+});
+
+test("K-4: a light-model YES beside an enforcing DMARC fail is not released by a safe review", async () => {
+  const { mf, call } = await fixture();
+  try {
+    await call("set", { key: "test:scan", value: JSON.stringify({ flagged: "whoever" }) });
+    await call("set", { key: "test:review", value: "safe" });
+    await call("ingest", { account: CF, event: event("dm", "<p>Please pass this on to whoever reads it next.</p>", { headers: [
+      { key: "authentication-results", value: "mx.cloudflare.net; dmarc=fail header.from=bank.example policy.dmarc=reject" }, { key: "from", value: "Bank <alerts@bank.example>" }] }) });
+    const r = (await call("of", { keys: [{ accountId: CF.id, messageId: "dm" }] }))[`${CF.id}|dm`];
+    assert.deepEqual([r.state, r.review.verdict], ["held", "safe"]);
+    assert.deepEqual(await call("released"), []);
+  } finally { await mf.dispose(); }
+});
+
+test("K-5: turning documents into text is charged to the review's budget; with none left they stay unread and say so", async () => {
+  const { mf, call } = await fixture({ AI: {}, SAFETY_REVIEW_DAILY_LIMIT: "1" });
+  try {
+    const doc = (id: string) => ({ files: [{ id: "d1", filename: "invoice.pdf", mimetype: "application/pdf", size: 20 }] });
+    await call("putFile", { key: "attachments/doc1/d1/invoice.pdf", text: "%PDF-1.7 invoice 42" });
+    await call("putFile", { key: "attachments/doc2/d1/invoice.pdf", text: "%PDF-1.7 invoice 43" });
+    await call("ingest", { account: CF, event: event("doc1", "<p>Invoice.</p>", doc("doc1")) });
+    assert.deepEqual(await call("get", { key: "test:read" }), ["invoice.pdf"], "the first message's document was read");
+    await call("set", { key: "test:read", value: null });
+    await call("ingest", { account: CF, event: event("doc2", "<p>Invoice.</p>", doc("doc2")) });
+    assert.equal(await call("get", { key: "test:read" }), null, "no conversion past the budget");
+    const r = (await call("of", { keys: [{ accountId: CF.id, messageId: "doc2" }] }))[`${CF.id}|doc2`];
+    assert.deepEqual([r.state, r.findings.unreadFiles], ["clear", ["invoice.pdf"]]);
+    assert.ok(r.findings.check.notRun.some((n: any) => n.check === "hidden" && n.why === "inboxDocumentBudget"));
+  } finally { await mf.dispose(); }
+});

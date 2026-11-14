@@ -124,9 +124,9 @@ export interface SendReceipt {
 interface StoredSend extends SendReceipt {
   digest: string;
 }
-/** B-179: a message's attached files as the safety check takes them: not its inline pictures, at most 20. */
+/** B-179: a message's attached files as the safety check takes them: not its inline pictures; every one (K-1: the check judges at most 10 by their bytes, every one by its name). */
 const attachedFiles = (message: Message) => (message.attachments ?? []).filter((a) => !a.inline && a.providerAttachmentId)
-  .slice(0, 20).map((a) => ({ id: a.providerAttachmentId, filename: a.filename || "attachment", mimetype: a.mimeType || "application/octet-stream", size: a.size || 0 }));
+  .map((a) => ({ id: a.providerAttachmentId, filename: a.filename || "attachment", mimetype: a.mimeType || "application/octet-stream", size: a.size || 0 }));
 export interface IncomingEvent {
   account: string;
   emailId: string;

@@ -70,7 +70,8 @@ export function acceptFrameLink(
 	const data = event.data as { type?: unknown; index?: unknown; nonce?: unknown } | null;
 	if (!data || typeof data !== "object" || data.type !== "okolos-link") return undefined;
 	if (data.nonce !== nonce || typeof data.index !== "number" || !Number.isInteger(data.index) || data.index < 0 || data.index >= count) return undefined;
-	if (activation && !activation.isActive) return undefined;
+	// K-6: no user activation, or a browser that cannot say, opens nothing.
+	if (activation?.isActive !== true) return undefined;
 	return data.index;
 }
 

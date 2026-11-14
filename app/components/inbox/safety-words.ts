@@ -4,7 +4,7 @@
  * `shared/i18n/ru/inbox.ts`. A code with no line here is shown as nothing, never as its key.
  */
 import type { T } from "../../../shared/i18n";
-import { asciiHost, visibleText, type BadgeLabel, type CheckSignal, type FileEntry, type ReviewCode } from "../../../shared/mail/safety";
+import { asciiHost, visibleText, type BadgeLabel, type CheckName, type CheckSignal, type FileEntry, type MailCheck, type ReviewCode } from "../../../shared/mail/safety";
 
 export function badgeWords(label: BadgeLabel, t: T): string {
   switch (label) {
@@ -59,6 +59,7 @@ export function notRunWords(why: string, t: T): string {
     case "inboxLinkCap": return t("Links: only the first 100 were checked.");
     case "inboxScanFailed": return t("Hidden text: the light model could not run.");
     case "inboxDocumentNotRead": return t("Hidden text: a document's text was not read.");
+    case "inboxDocumentBudget": return t("Hidden text: documents were not read, as the review's limit for today was reached.");
     case "inboxFileNotChecked": return t("Files: not every file was checked.");
     case "inboxNotReceived": return t("Mail you sent and drafts get the links check only.");
     default: return "";
@@ -88,11 +89,25 @@ export function fileWords(f: FileEntry, t: T): string {
   }
 }
 
-/** The question an amber file asks once before it downloads. */
+/**
+ * K-9: whether a check's "nothing found" line is shown: only when the check ran in full; the links line also needs
+ * the record checked against the server's current feed, so it never sits beside a line saying the links check did
+ * not run.
+ */
+export function showsOkLine(name: CheckName, check: MailCheck, linksComplete: boolean): boolean {
+  if (check.notRun.some((n) => n.check === name)) return false;
+  return name !== "links" || linksComplete;
+}
+
+/** K-8: an "asked once" download is remembered per account, message and attachment. */
+export const downloadAskKey = (accountId: string, messageId: string, attachmentId: string) => JSON.stringify([accountId, messageId, attachmentId]);
+
+/** The question an amber file, or a file the check did not read, asks once before it downloads. */
 export function downloadQuestion(f: FileEntry, t: T): string {
   if (f.codes.includes("webPage")) return t("This file is a web page. Download anyway?");
   if (f.codes.includes("archive")) return t("This file is an archive whose contents were not checked. Download anyway?");
   if (f.codes.includes("macros")) return t("This file is an Office document with macros. Download anyway?");
+  if (!f.checked) return t("This file was not checked. Download anyway?");
   return t("This file needs care before it is opened. Download anyway?");
 }
 

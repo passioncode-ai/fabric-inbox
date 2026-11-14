@@ -66,8 +66,8 @@ export function fence(input: CheckReviewInput, token = crypto.randomUUID().repla
 export const normalise = (s: string) => visibleText(s).replace(/\s+/g, " ").trim();
 
 /**
- * The model's answer, validated: known codes only, each once, and only quotes found exactly in the normalised message
- * text. A contradicting answer (`unsure` beside a finding: it cannot both have found something and not know) or
+ * The model's answer, validated: known codes only, each once, and quotes found exactly in the normalised message
+ * text (one that is not drops the answer, K-7). A contradicting answer (`unsure` beside a finding: it cannot both have found something and not know) or
  * anything malformed is dropped whole (null).
  */
 export function validateReview(answer: unknown, sourceText: string): { codes: ReviewCode[]; quotes: string[] } | null {
@@ -76,7 +76,9 @@ export function validateReview(answer: unknown, sourceText: string): { codes: Re
   const codes = [...new Set(parsed.data.codes)];
   if (codes.includes("unsure") && codes.some((c) => c !== "unsure")) return null;
   const haystack = normalise(sourceText);
-  const quotes = parsed.data.quotes.map(normalise).filter((q) => q.length >= 3 && haystack.includes(q)).slice(0, 2);
+  const quotes = parsed.data.quotes.map(normalise);
+  // K-7: a quote not found in the message is output that fails validation: the answer is dropped whole.
+  if (quotes.some((q) => q.length < 3 || !haystack.includes(q))) return null;
   // A finding with no code: quotes without a code say nothing a person can read.
   if (!codes.length && quotes.length) return { codes: [], quotes: [] };
   return { codes, quotes };

@@ -101,6 +101,9 @@ export function fileKey(accountId: string, messageId: string, f: { id: string; f
   return accountId.startsWith("cloudflare:") ? `attachments/${messageId}/${f.id}/${f.filename}`
     : `account:${[accountId, messageId, f.id].map(encodeURIComponent).join("/")}`;
 }
+/** S03: the sender's domain, for the review's per-domain cap. */
+const senderDomain = (item: QueueItem) => (addresses(item.fromLine ?? item.sender)[0]?.domain ?? item.sender.split("@").pop() ?? "").toLowerCase() || "-";
+
 /** A queued file's attachment id: the last part of its key (`attachments/<message>/<id>/<name>` or `account:<a>/<m>/<id>`). */
 export function fileIdOf(f: MailFile): string {
   const remote = parseAccountFileKey(f.key);
@@ -121,7 +124,7 @@ export function parseAccountFileKey(key: string): { accountId: string; messageId
   const parts = key.slice("account:".length).split("/").map(decodeURIComponent);
   return parts.length === 3 && parts.every(Boolean) ? { accountId: parts[0]!, messageId: parts[1]!, attachmentId: parts[2]! } : null;
 }
-import { readFiles, type MailFile, type ToText } from "../safety/files";
+import { readable, readFiles, type MailFile, type ToText } from "../safety/files";
 export { safetyOn };
 type Row = Record<string, string | number | null>;
 
@@ -709,8 +712,12 @@ export class CategoriesDO extends DurableObject<Env> {
     // A file is read once per check, whatever reads it (its document text, its bytes).
     const blobs = new Map<string, Promise<Blob | null>>();
     const whole = (key: string) => { if (!blobs.has(key)) blobs.set(key, this.fileBytes(key).catch(() => null)); return blobs.get(key)!; };
-    // B-179: what its files say, read before the check so their text is checked with the body.
-    const files = item.files?.length ? await readFiles(item.files, whole, this.toText()).catch(() => null) : null;
+    // B-179: what its files say, read before the check so their text is checked with the body. K-5: turning documents
+    // into text is a model call: it is charged to the review's own budget and the sender domain's cap first, and with
+    // neither left the documents stay unread (named, never passed as read).
+    const docs = (item.files ?? []).some(readable);
+    const converts = docs ? this.spendCheckReview(senderDomain(item)) : "ok";
+    const files = item.files?.length ? await readFiles(item.files, whole, converts === "ok" ? this.toText() : null).catch(() => null) : null;
     const findings = await inspectMessage({ subject: item.subject, html: item.html ?? "", files: files?.text ?? "" }, (text) =>
       this.spendSafety() ? this.safetyScan(text) : Promise.resolve({ flagged: false, error: msg("The day's safety budget was spent") }));
     if (files?.risky.length) findings.riskyFiles = files.risky;
@@ -730,8 +737,19 @@ export class CategoriesDO extends DurableObject<Env> {
     const check = await this.deterministicCheck({ accountId: item.accountId, subject: item.subject, html: item.html ?? "",
       fromLine: item.fromLine ?? item.sender, replyToLine: item.replyToLine ?? null, headers: item.headers ?? [], files: item.files ?? [],
       scope: "received", findings, read: this.fileSlicesReader(whole), now });
+    if (converts !== "ok") check.notRun.push({ check: "hidden", why: "inboxDocumentBudget" });
     const disguised = check.files.filter((f) => f.codes.includes("disguised")).map((f) => f.filename);
     if (disguised.length) findings.disguisedFiles = disguised;
+    // K-2: a feed-listed or lookalike link the canonical extraction found (an entity-encoded href, a protocol-relative
+    // one) holds the message like one the older extraction found; the hold reads the final link results.
+    for (const l of check.links) {
+      if (l.why === "phishing" && !findings.phishing?.some((p) => p.host === l.host)) (findings.phishing ??= []).push({ host: l.host, entry: l.host });
+      if (l.why === "lookalike" && !findings.lookalikes?.some((p) => p.host === l.host)) (findings.lookalikes ??= []).push({ host: l.host, resembles: l.resembles ?? "", kind: "lookalike" });
+    }
+    const namedRisky = check.files.filter((f) => f.colour === "red" && !f.codes.includes("disguised") && !findings.riskyFiles?.includes(f.filename)).map((f) => f.filename);
+    if (namedRisky.length) findings.riskyFiles = [...(findings.riskyFiles ?? []), ...namedRisky];
+    // K-4: the held review reads every deterministic signal through modelOnly.
+    findings.check = check;
     let state: SafetyState = "clear";
     let reason = "";
     let review: SafetyReview | null = null;
@@ -782,8 +800,7 @@ export class CategoriesDO extends DurableObject<Env> {
 
   /** S03 §3: the new review, or why it did not run (its budget, the sender domain's cap, a failure). Never holds by itself. */
   private async runCheckReview(item: QueueItem, check: MailCheck, parts: { name: string; text: string }[], now: number): Promise<CheckReview> {
-    const domain = (addresses(item.fromLine ?? item.sender)[0]?.domain ?? item.sender.split("@").pop() ?? "").toLowerCase();
-    const spent = this.spendCheckReview(domain || "-");
+    const spent = this.spendCheckReview(senderDomain(item));
     if (spent !== "ok") return { version: 1, ran: false, why: spent, codes: [], quotes: [], contentHash: check.contentHash, at: now };
     const { model, name } = this.reviewModel();
     const from = addresses(item.fromLine ?? item.sender)[0];
