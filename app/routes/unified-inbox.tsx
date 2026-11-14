@@ -57,7 +57,7 @@ import ReplyFilter from "~/components/inbox/ReplyFilter";
 import { forwardBody } from "../../shared/mail/forward";
 import { isAgentState, type AgentStatusSettings } from "../../shared/mail/agent-state";
 import ConversationList from "~/components/inbox/ConversationList";
-import { foldQuotedHtml, threadEvents, type RunLike, type SafetyLike } from "~/components/inbox/quotes";
+import { foldQuotedHtml, splitQuotedText, threadEvents, type RunLike, type SafetyLike } from "~/components/inbox/quotes";
 import { loadConversation, markRead, messageBody, type ThreadRow } from "~/components/inbox/thread";
 import AgentRunPanel from "~/components/inbox/AgentRunPanel";
 import HeldPanel from "~/components/inbox/HeldPanel";
@@ -1039,7 +1039,16 @@ export default function UnifiedInbox() {
                               blockedHosts={selected.held?.links}
                             />
                           ) : detail.data.text ? (
-                            <pre data-quote-key={selected.id}>{detail.data.text}</pre>
+                            // S05 (B-221): a text body's quoted history folds under "Show quoted text", as in a thread's cells.
+                            <>
+                              <pre data-quote-key={selected.id}>{splitQuotedText(detail.data.text).main}</pre>
+                              {splitQuotedText(detail.data.text).quote && (
+                                <details className="fi-quote">
+                                  <summary><span className="fi-quote-show">{t("Show quoted text")}</span><span className="fi-quote-hide">{t("Hide quoted text")}</span></summary>
+                                  <pre data-quote-key={selected.id}>{splitQuotedText(detail.data.text).quote}</pre>
+                                </details>
+                              )}
+                            </>
                           ) : (
                             <p>{t("No message body.")}</p>
                           )}
