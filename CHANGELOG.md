@@ -5,6 +5,10 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.6.17 (2026-11-14)
+
+**Cleaner wording in settings and the agent console** (B-265). Labels such as the agent key levels and the console's window title now use a colon or brackets instead of a long dash, in both languages. Basis: `tests/no-em-dash-ui.test.ts`.
+
 ## 1.6.16 (2026-11-14)
 
 **The agent console tells you when a session goes quiet** (B-261). When the coding agent in the console has had no output and no input for 30 minutes, the console says so and reminds you that the session still holds its key, so a forgotten session is easy to stop. Any output or keystroke clears the notice. Basis: `tests/desktop-console.test.ts`.
