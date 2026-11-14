@@ -5,6 +5,10 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.6.19 (2026-11-14)
+
+**Easier with many domains, and the mail list stays in view** (B-266). With several servers in a tall window, the server tabs above the mail list grew into tall ovals and pushed your mail out of view; they now stay one line high. When you have more than eight domains, a field above the addresses finds an address or a domain as you type, and the addresses scroll with the rest of the sidebar instead of in a small box of their own. Drag the edge of the sidebar or of the mail list (or use the arrow keys on it) to make it wider: long domain names and message previews then show in full, and the width is kept on this device. A double click puts it back.
+
 ## 1.6.18 (2026-11-14)
 
 **Russian wording without long dashes** (B-265). Russian interface text throughout the app reads with a colon, a comma or brackets where it used a long dash before, and so does the Mac app's own text. Basis: `tests/no-em-dash-ui.test.ts`.
