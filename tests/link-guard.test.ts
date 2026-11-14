@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { acceptFrameLink, frameLinkScript, guardContext, guardHref, hostParts, UNCHECKED } from "../app/lib/link-guard";
+import { acceptFrameLink, frameLinkScript, guardContext, guardHref, hostParts, mailtoParts, UNCHECKED } from "../app/lib/link-guard";
 import { linkDecision, type SafetyColour } from "../shared/mail/safety";
 
 // S04 (B-270): the sanitizer's decision per href, and the parent's check of a frame's link message.
@@ -75,4 +75,20 @@ test("every frame runs the link script, which parses and opens nothing itself; t
   const script = frameLinkScript("n");
   assert.doesNotThrow(() => new Function(script));
   assert.doesNotMatch(script, /window\.open|location|<\/script/i);
+});
+
+test("A-21: until the record arrives a mailto: asks too, as on a dangerous message; then it keeps its address", () => {
+  const mail = "mailto:billing@acme.example";
+  assert.equal(guardHref(mail, "Write to us", 0, guardContext(null, undefined, { pending: true })).keep, false, "pending: no live mailto");
+  assert.equal(guardHref(mail, "Write to us", 0, guardContext(null, undefined)).keep, true, "a record that says grey keeps it");
+  assert.equal(guardHref(mail, "Write to us", 0, guardContext(red, [])).keep, false);
+  assert.equal(guardHref("https://acme.example/a", "a", 0, guardContext(green, checked, { pending: true })).keep, true, "pending changes only mailto");
+});
+
+test("A-9: a mailto: notice names the address it writes to, its domain in ASCII with the registrable part apart", () => {
+  assert.deepEqual(mailtoParts("mailto:billing@pay.acme.example?subject=x"), { local: "billing", sub: "pay", registrable: "acme.example" });
+  assert.deepEqual(mailtoParts("mailto:ann@пример.example"), { local: "ann", sub: "", registrable: "xn--e1afmkfd.example" });
+  assert.equal(mailtoParts("mailto:"), null);
+  assert.equal(mailtoParts("https://acme.example/"), null);
+  assert.equal(hostParts("mailto:ann@acme.example"), null, "a mailto has no host: never \"This link goes to\" with nothing after it");
 });

@@ -49,8 +49,9 @@ test("the switch and the server groups say signed out and not reachable in the s
   assert.match(text(switchHtml), /Beta · Войти/);
   assert.match(text(groupsHtml), /Войти/);
   assert.doesNotMatch(text(groupsHtml), /Вход/);
-  // Not reachable now: «Сейчас недоступен» in the switch's tooltip and in the group's note.
-  assert.match(switchHtml, /title="Сейчас недоступен"/);
+  // Not reachable now: «Сейчас недоступен» in the switch (its tooltip, read out with the choice; A-32 moved the tooltip
+  // from a native title to Kumo's) and in the group's note.
+  assert.match(switchHtml, /<span class="sr-only"> Сейчас недоступен<\/span>/);
   assert.match(text(groupsHtml), /Сейчас недоступен/);
   assert.doesNotMatch(switchHtml + groupsHtml, /не отвечает/);
 });

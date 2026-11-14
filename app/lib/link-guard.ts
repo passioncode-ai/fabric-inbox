@@ -14,19 +14,26 @@ export interface LinkGuardContext {
   colour: SafetyColour;
   /** The server's checked links, by canonical URL. */
   checked: Map<string, CheckedLink>;
+  /** A-21: the record is still on its way; until it arrives a `mailto:` asks too, as on a dangerous message. */
+  pending?: boolean;
+  /** A-20: the title a guarded link carries ("Asks before it opens"), in the reader's language. */
+  title?: string;
 }
 
 /** No record (or one that cannot be read): grey, every link asks. */
 export const UNCHECKED: SafetyColour = { colour: "grey", label: "notChecked", linksComplete: false };
 
-export function guardContext(colour: SafetyColour | null | undefined, links: CheckedLink[] | undefined): LinkGuardContext {
-  return { colour: colour ?? UNCHECKED, checked: new Map((links ?? []).map((l) => [l.url, l])) };
+export function guardContext(colour: SafetyColour | null | undefined, links: CheckedLink[] | undefined,
+  more: { pending?: boolean; title?: string } = {}): LinkGuardContext {
+  return { colour: colour ?? UNCHECKED, checked: new Map((links ?? []).map((l) => [l.url, l])), ...(more.pending ? { pending: true } : {}),
+    ...(more.title ? { title: more.title } : {}) };
 }
 
 /**
  * One href as the sanitizer meets it: whether it keeps its address, and the reader's record of it. A link keeps its
  * address only when the message's links are vouched for, its canonical URL is one the server checked (and found
- * nothing on), and it is written plainly; `mailto:` keeps it unless the message is red.
+ * nothing on), and it is written plainly; `mailto:` keeps it unless the message is red or its record has not
+ * arrived yet (A-21).
  */
 export function guardHref(raw: string, text: string, index: number, ctx: LinkGuardContext): { keep: boolean; link: ReaderLink } {
   const { url, odd } = canonicalLink(raw);
@@ -34,7 +41,7 @@ export function guardHref(raw: string, text: string, index: number, ctx: LinkGua
   const link: ReaderLink = { index, url, raw: raw.slice(0, 2000), text: visibleText(text).replace(/\s+/g, " ").trim().slice(0, 200), odd, ...(checked ? { checked } : {}) };
   let scheme = "";
   try { scheme = url ? new URL(url).protocol : ""; } catch { scheme = ""; }
-  if (scheme === "mailto:") return { keep: ctx.colour.colour !== "red", link };
+  if (scheme === "mailto:") return { keep: ctx.colour.colour !== "red" && !ctx.pending, link };
   const keep = !guardsLinks(ctx.colour) && !odd && !!checked && !checked.why && (scheme === "http:" || scheme === "https:");
   return { keep, link };
 }
@@ -81,8 +88,28 @@ export function hostParts(url: string | null): { sub: string; registrable: strin
 	let host = "";
 	try { host = new URL(url).hostname; } catch { return null; }
 	host = visibleText(host);
+	if (!host) return null;
 	const labels = host.split(".");
 	// Two labels, three under a two-letter country code with a short second label (co.uk, com.au): enough for a notice.
 	const keep = labels.length > 2 && labels[labels.length - 1]!.length === 2 && labels[labels.length - 2]!.length <= 3 ? 3 : 2;
 	return { sub: labels.slice(0, -keep).join("."), registrable: labels.slice(-keep).join(".") };
+}
+
+/**
+ * A-9: a `mailto:` link as the notice shows it: the address it writes to, its domain in ASCII (punycode) with the
+ * registrable part apart so it can be emphasised. Null for anything else, or a `mailto:` with no address.
+ */
+export function mailtoParts(url: string | null): { local: string; sub: string; registrable: string } | null {
+	if (!url) return null;
+	let parsed: URL;
+	try { parsed = new URL(url); } catch { return null; }
+	if (parsed.protocol !== "mailto:") return null;
+	let first = "";
+	try { first = decodeURIComponent(parsed.pathname.split(",")[0] ?? ""); } catch { first = parsed.pathname.split(",")[0] ?? ""; }
+	first = visibleText(first).trim();
+	const at = first.lastIndexOf("@");
+	if (at <= 0 || at === first.length - 1) return null;
+	const domain = hostParts(`https://${first.slice(at + 1)}/`);
+	if (!domain) return null;
+	return { local: first.slice(0, at), ...domain };
 }

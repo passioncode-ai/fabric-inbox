@@ -468,6 +468,8 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"This link is written in an unusual way, so it asks first.": "Эта ссылка записана необычно, поэтому открывается только после вопроса.",
 	"This message was not fully checked, so its links ask first.": "Это письмо проверено не полностью, поэтому ссылки открываются только после вопроса.",
 	"This link goes to {host}": "Эта ссылка ведёт на {host}",
+	"This link writes to {address}": "Эта ссылка открывает письмо на адрес {address}",
+	"Asks before it opens": "Открывается только после вопроса",
 	"Don't open": "Не открывать",
 	"Open anyway": "Всё равно открыть",
 	"Copy address": "Скопировать адрес",

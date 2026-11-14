@@ -9,7 +9,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { hasRemoteContent } from "../lib/mail-content";
 import { useT } from "../lib/i18n";
 import { acceptFrameSelection, FRAME_SELECTION_SCRIPT, type QuoteRect } from "../lib/quote-selection";
-import { acceptFrameLink, frameLinkScript, guardContext, guardHref, hostParts, type LinkGuardContext } from "../lib/link-guard";
+import { acceptFrameLink, frameLinkScript, guardContext, guardHref, hostParts, mailtoParts, type LinkGuardContext } from "../lib/link-guard";
 import { linkDecision, type CheckedLink, type LinkVerdict, type ReaderLink, type SafetyColour } from "../../shared/mail/safety";
 
 /**
@@ -94,7 +94,9 @@ function installLinkHook() {
 					node.setAttribute("data-okolos-link", String(link.index));
 					node.setAttribute("role", "link");
 					node.setAttribute("tabindex", "0");
-					node.setAttribute("style", `${node.getAttribute("style") ?? ""};cursor:pointer`);
+					// A-20: a link that asks looks apart from a live one: a dotted underline and a title that says so.
+					node.setAttribute("style", `${node.getAttribute("style") ?? ""};cursor:pointer;text-decoration-line:underline;text-decoration-style:dotted`);
+					if (guarded.ctx.title) node.setAttribute("title", guarded.ctx.title);
 					guarded.links.push(link);
 					return;
 				}
@@ -117,9 +119,10 @@ interface EmailIframeProps {
 	blockedHosts?: string[];
 	/**
 	 * S04 (B-270): the message's safety colour and the links the server checked. Absent (no record, a view with none,
-	 * a record that cannot be read): grey, and every link asks before it opens.
+	 * a record that cannot be read): grey, and every link asks before it opens. "pending": the record is on its way;
+	 * grey, and a `mailto:` asks too until it arrives (A-21).
 	 */
-	linkSafety?: { colour: SafetyColour; links: CheckedLink[] } | null;
+	linkSafety?: { colour: SafetyColour; links: CheckedLink[] } | "pending" | null;
 }
 
 /** "Open anyway", remembered for that link of that message until the window closes (S04). */
@@ -155,8 +158,10 @@ export default function EmailIframe({ body, messageKey, inlineAttachments, autoS
 	const renderRef = useRef<{ nonce: string; links: ReaderLink[] }>({ nonce: "", links: [] });
 	const [notice, setNotice] = useState<{ link: ReaderLink; verdict: LinkVerdict } | null>(null);
 	const noticeRef = useRef<HTMLDivElement>(null);
-	const colourRef = useRef(linkSafety?.colour);
-	colourRef.current = linkSafety?.colour;
+	const colourRef = useRef(linkSafety && linkSafety !== "pending" ? linkSafety.colour : undefined);
+	colourRef.current = linkSafety && linkSafety !== "pending" ? linkSafety.colour : undefined;
+	const pendingRef = useRef(linkSafety === "pending");
+	pendingRef.current = linkSafety === "pending";
 	const safetyKey = JSON.stringify(linkSafety ?? null);
 	const [height, setHeight] = useState(autoSize ? 100 : 0);
 	const [allowedMessage, setAllowedMessage] = useState<string | null>(null);
@@ -194,7 +199,9 @@ export default function EmailIframe({ body, messageKey, inlineAttachments, autoS
 			const index = acceptFrameLink(event, frame.contentWindow, renderRef.current.nonce, renderRef.current.links.length, activation);
 			if (index !== undefined) {
 				const link = renderRef.current.links[index]!;
-				const verdict = linkDecision(colourRef.current ?? { colour: "grey", label: "notChecked", linksComplete: false }, link);
+				let verdict = linkDecision(colourRef.current ?? { colour: "grey", label: "notChecked", linksComplete: false }, link);
+				// A-21: until the record arrives nothing opens without asking, a mailto: included.
+				if (pendingRef.current && verdict.action === "open") verdict = { action: "ask", url: verdict.url, why: "notChecked" };
 				if (verdict.action === "open") openUrl(verdict.url);
 				else if (verdict.action === "ask" && openedAnyway.has(`${keyRef.current}|${verdict.url}`)) openUrl(verdict.url);
 				else setNotice({ link, verdict });
@@ -229,7 +236,8 @@ export default function EmailIframe({ body, messageKey, inlineAttachments, autoS
 		if (!iframe) return;
 
 		const safety = JSON.parse(safetyKey) as EmailIframeProps["linkSafety"];
-		const guardedBody = sanitizeGuarded(body, guardContext(safety?.colour, safety?.links),
+		const record = safety && safety !== "pending" ? safety : null;
+		const guardedBody = sanitizeGuarded(body, guardContext(record?.colour, record?.links, { pending: safety === "pending", title: t("Asks before it opens") }),
 			blockedHosts?.length ? { hosts: blockedHosts, title: t("Blocked: a known phishing site") } : undefined);
 		const cleanBody = guardedBody.html;
 		const nonce = crypto.randomUUID();
@@ -244,8 +252,10 @@ export default function EmailIframe({ body, messageKey, inlineAttachments, autoS
 		const heightScript = autoSize
 			? `<script>
 				var last = 0;
+				// A-25: the content's own height, not the frame's: documentElement.scrollHeight is never less than the
+				// frame, so a quote folded again (or a body shorter than the first guess) left a blank gap under it.
 				function reportHeight() {
-					var h = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+					var h = Math.ceil(Math.max(document.documentElement.getBoundingClientRect().height, document.body.scrollHeight));
 					if (h > 0 && h !== last) { last = h; parent.postMessage({ __emailIframeHeight: true, height: h }, "*"); }
 				}
 				reportHeight();
@@ -323,7 +333,9 @@ ul, ol { padding-left: 20px; margin: 4px 0; }
 	}, [body, autoSize, remoteImages, inlineKey, (blockedHosts ?? []).join(","), safetyKey]);
 
 	useEffect(() => { if (notice) noticeRef.current?.focus(); }, [notice]);
-	const closeNotice = () => { setNotice(null); iframeRef.current?.focus(); };
+	// A-19: focus goes back to the frame once the notice has gone (focusing it while the notice unmounts left it on the
+	// page's body in WebKit).
+	const closeNotice = () => { setNotice(null); requestAnimationFrame(() => iframeRef.current?.focus()); };
 
 	return (
 		<div className={autoSize ? "" : "flex h-full min-h-0 flex-col"}>
@@ -364,6 +376,7 @@ function LinkNotice({ notice, refEl, onClose, onOpenAnyway }: {
 	const [copied, setCopied] = useState(false);
 	const { link, verdict } = notice;
 	const parts = hostParts(verdict.url);
+	const mail = parts ? null : mailtoParts(verdict.url ?? link.url);
 	const host = parts ? (parts.sub ? `${parts.sub}.${parts.registrable}` : parts.registrable) : "";
 	const why = verdict.action === "block"
 		? verdict.why === "phishing" ? t("This site is on the phishing list.")
@@ -378,9 +391,10 @@ function LinkNotice({ notice, refEl, onClose, onOpenAnyway }: {
 			: "";
 	return (
 		<div ref={refEl} role="alert" tabIndex={-1} className={"fi-link-notice" + (verdict.action === "block" ? " is-red" : "")}
-			onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } }}>
+			onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(); } }}>
 			<p className="fi-link-notice-title">
 				{parts ? <>{t("This link goes to {host}", { host: "" }).trim()} <span className="fi-link-host">{parts.sub ? `${parts.sub}.` : ""}<strong>{parts.registrable}</strong></span></>
+					: mail ? <>{t("This link writes to {address}", { address: "" }).trim()} <span className="fi-link-host">{mail.local}@{mail.sub ? `${mail.sub}.` : ""}<strong>{mail.registrable}</strong></span></>
 					: t("This link cannot be opened safely.")}
 			</p>
 			{why && <p>{why}</p>}

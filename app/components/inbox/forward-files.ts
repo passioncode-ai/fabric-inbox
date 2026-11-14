@@ -5,9 +5,21 @@
  * or found dangerous by the safety check (a red file is never attached by itself).
  */
 import { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from "../../../shared/mail/attachments";
-import type { Draft, ForwardSource, LeftOut } from "./draft-store";
+import type { Draft, FileSafety, ForwardSource, LeftOut } from "./draft-store";
 
 export type Original = ForwardSource["files"][number];
+
+/**
+ * A-1 (S03, S09): the original's files as a forward carries them, each with the safety colour the check gave it by
+ * attachment id; a file the check named nothing about is grey ("Not checked"). Without a colour a red file would be
+ * attached by itself, so the reader passes the record it has, and an empty map (no record) makes every file grey.
+ */
+export function originalsWithSafety(
+  attachments: readonly { id: string; filename: string; mimeType: string; size: number }[],
+  colours: ReadonlyMap<string, { colour: FileSafety }>,
+): Original[] {
+  return attachments.map((a) => ({ id: a.id, filename: a.filename, mimeType: a.mimeType, size: a.size, safety: colours.get(a.id)?.colour ?? "grey" }));
+}
 
 /** Original ids the draft already carries: on this device (loading, failed or ready) or saved with it on the server. */
 export function includedOriginalIds(d: Draft): Set<string> {

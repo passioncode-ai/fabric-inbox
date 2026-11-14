@@ -61,7 +61,7 @@ test("the reader shows the conversation as cells, oldest first, and opens any of
   assert.match(list, /if \(rows\.length < 2\) return null;/);
   assert.match(list, /aria-current=\{open \? "true" : undefined\}/);
   // B-138: every message whole in its own cell; the open one's cell is the reader's own content.
-  assert.match(list, /<div className="fi-thread-cell-body">\{open \? renderOpen\(\) : <CellBody row=\{row\} loadBody=\{loadBody\} \/>\}<\/div>/);
+  assert.match(list, /<div className="fi-thread-cell-body">\{open \? renderOpen\(\)\s*: <CellBody row=\{row\} loadBody=\{loadBody\} linkSafety=\{[^}]+\} \/>\}<\/div>/);
   assert.match(route, /const threaded = \(conversation\.data\?\.length \?\? 0\) > 1;/);
   assert.match(route, /renderOpen=\{\(\) => openContent\} \/>\s+\) : openContent\}/, "one message alone reads as before");
 });

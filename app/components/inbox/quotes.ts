@@ -56,7 +56,11 @@ export interface QuoteLabels {
 
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-const FOLD_STYLE = "details.fi-quote{margin:12px 0}details.fi-quote>summary{cursor:pointer;color:#6b6575;font-size:12px;list-style:none}"
+// A-25: the summary reads as a control: a link-coloured line with a disclosure mark that turns when it opens.
+const FOLD_STYLE = "details.fi-quote{margin:12px 0 0}details.fi-quote>summary{display:inline-block;cursor:pointer;color:#2563eb;font-size:12px;"
+  + "list-style:none;padding:2px 0;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px}"
+  + "details.fi-quote>summary::before{content:\"\\25B8\";display:inline-block;width:1.1em;text-decoration:none}"
+  + "details.fi-quote[open]>summary::before{content:\"\\25BE\"}"
   + "details.fi-quote>summary::-webkit-details-marker{display:none}details.fi-quote[open] .fi-quote-show,details.fi-quote:not([open]) .fi-quote-hide{display:none}";
 
 const summaryHtml = (labels: QuoteLabels) =>
@@ -133,6 +137,20 @@ export function answeredRows(rows: ReplyFacts[]): number[] {
 
 /** A reply is set in one level when it does not answer the message right above it (two replies to one message). */
 export const isNested = (answered: number, index: number) => answered >= 0 && answered !== index - 1;
+
+/**
+ * A-16: the same rule against the cells as they are drawn. A row drawn as something else (an agent's draft shown as a
+ * card under the message it answers) is not the cell above: a reply to the message right above that card is not
+ * indented and carries no "In reply to".
+ */
+export function nestedRows(answered: readonly number[], drawn: (index: number) => boolean): boolean[] {
+  let above = -1;
+  return answered.map((target, i) => {
+    const nested = target >= 0 && target !== above;
+    if (drawn(i)) above = i;
+    return nested;
+  });
+}
 
 /** A rule's run on a message of the thread, as `GET /api/automation/:account/runs` lists it. */
 export interface RunLike {
