@@ -279,6 +279,7 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"Quitting stops the agent and revokes its key.": "При завершении агент остановится, а его ключ будет отозван.",
 	"Making a key for this session…": "Создаём ключ для этой сессии…",
 	"{agent} is connected to Fabric Inbox.": "{agent} подключён к Fabric Inbox.",
+	"{agent} has had no output and no input for 30 minutes. It is still running with its key; stop it if you are done.": "{agent} молчит 30 минут: ни вывода, ни ввода. Сессия по-прежнему работает со своим ключом; остановите её, если работа закончена.",
 	"The session ended; its key could not be revoked: revoke it in Settings → Agent access.": "Сессия завершена, но её ключ отозвать не удалось — отзовите его в «Настройки → Доступ агентов».",
 	"Stopped. The session's key was revoked.": "Остановлено. Ключ сессии отозван.",
 	"The agent exited (code {code}). The session's key was revoked.": "Агент завершил работу (код {code}). Ключ сессии отозван.",

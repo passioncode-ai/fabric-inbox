@@ -16,16 +16,16 @@ const T0 = Date.parse("2026-11-04T10:00:00Z");
 test("B-212: the app's own outcomes map to ok, failed or unknown as DEC-0153 OD-3 allows (a published map)", () => {
   for (const o of ["failed", "check_failed", "install_failed", "not_saved", "not_written", "storage_not_cleared", "directory_not_removed", "lost", "unparsed", "timeout", "leftovers"])
     assert.equal(outcomeOf(o), "failed", o);
-  for (const o of ["ok", "done", "current", "newer", "older", "installed", "verified", "ready", "started", "running", "connected", "on", "off"]) assert.equal(outcomeOf(o), "ok", o);
+  for (const o of ["ok", "done", "current", "newer", "older", "installed", "verified", "ready", "started", "running", "connected", "on", "off", "active"]) assert.equal(outcomeOf(o), "ok", o);
   // A skip, a person's choice, a setup or policy answer, and anything unnamed: never a failure, so no rise.
-  for (const o of ["unknown", "skipped", "refused", "denied", "held", "waiting", "unsupported", "unavailable", "needs_approval", "needs_migration", "something_new"])
+  for (const o of ["unknown", "skipped", "refused", "denied", "held", "waiting", "unsupported", "unavailable", "needs_approval", "needs_migration", "quiet", "something_new"])
     assert.equal(outcomeOf(o), "unknown", o);
 });
 
 test("B-212: every outcome the app's code logs is named in the map or ends in _failed", () => {
   const src = readdirSync("desktop").filter((f) => /\.(c?js)$/.test(f)).map((f) => readFileSync(path.join("desktop", f), "utf8")).join("\n");
   const named = new Set([...src.matchAll(/outcome: ?['"]([a-z_]+)['"]/g)].map((m) => m[1]));
-  const unknownOnPurpose = new Set(["skipped", "refused", "denied", "held", "waiting", "unsupported", "unavailable", "needs_migration"]);
+  const unknownOnPurpose = new Set(["skipped", "refused", "denied", "held", "waiting", "unsupported", "unavailable", "needs_migration", "quiet"]);
   for (const o of named) assert.ok(outcomeOf(o) !== "unknown" || unknownOnPurpose.has(o), `${o} is not in the map`);
 });
 
