@@ -20,6 +20,9 @@ Revised after review round 1 (KIMI-11, UX-13, UX-14, IR-13, CB-20).
 - **The header names the server:** "Settings · <server name>" («Настройки · <name>») when the app holds two or more
   servers, with the same switch as S01 (segments up to four servers, the menu for more; Settings has no list column, so
   the count of servers alone decides).
+- **What S01 brings to Settings:** the segments or the menu, the names, the signed-out and unreachable states (sign in and
+  retry by choosing the segment); not the unread counts (Settings has no mail). The disabled All is a state of its own
+  here: shown, not focusable by arrows, its reason in its tooltip.
 - **All stays visible on every section.** On Accounts, Addresses and Domains it shows every server's items grouped by
   server name; on the other sections (Agents, Knowledge, Keys, App, Name & signature) All is disabled with the reason
   in its tooltip: "This section belongs to one server" («Этот раздел относится к одному серверу»).
@@ -29,7 +32,8 @@ Revised after review round 1 (KIMI-11, UX-13, UX-14, IR-13, CB-20).
   server opens that server's settings at that item: the window switches to that server with the path
   `/settings/<section>/<id>` passed to `fabric:show-server` (`desktop/main.cjs:292-299, 495`), and the switch says so
   before it happens when an agent console session runs, since switching stops it (`main.cjs:296`): "The agent console
-  session will stop" («Сессия консоли агента остановится»). Adding an account, address or domain asks "Which server?"
+  session will stop" («Сессия консоли агента остановится»). Choosing another server's segment does the same switch and gives the same warning first. Adding an account, address
+  or domain asks "Which server?"
   («На каком сервере?»), defaulting to the one shown.
 - **Words:** where a sentence says "your server" and the app holds several, it names the server.
 

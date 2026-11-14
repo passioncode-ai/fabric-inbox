@@ -42,16 +42,20 @@ keep working).
 
 | Check | How | Notes |
 |---|---|---|
-| `senderAuth` | DMARC, SPF and DKIM from the topmost `Authentication-Results` whose authserv-id is the account's own receiving server: Cloudflare's MX (the existing `authResults`), `mx.google.com` for Gmail, Microsoft's `protection.outlook.com` for Outlook | IMAP and any account whose receiver is unknown: "did not run: the provider's own result cannot be told apart from one the sender wrote". A `DKIM-Signature` or `Received-SPF` header alone never counts as run. Okolos's `checkSenderAuth` is not used, since it reads the first header of that name (`core-mail/src/sender.ts:65-67`) |
+| `senderAuth` | DMARC, SPF and DKIM, counted only when the **topmost** `Authentication-Results` header is the account's own receiver's: Cloudflare's MX (the existing `authResults`, `shared/mail/spam.ts:45-47`, changed to look at the topmost header only), Gmail's `mx.google.com` when the topmost `Received` header is also Google's | Outlook, IMAP and any message whose topmost header is not the receiver's: "did not run: the provider's own result cannot be told apart from one the sender wrote". Outlook is not counted in this version (Exchange Online's header carries no reliable authserv-id); a row is filed to study it. A `DKIM-Signature` or `Received-SPF` header alone never counts. Okolos's `checkSenderAuth` is not used (it reads the first header of that name, `core-mail/src/sender.ts:65-67`) |
 | `senderIdentity` | Okolos `checkSenderIdentity` with the vendored `checkLookalike`, the default watchlist and the server's own `DOMAINS`; every From address, not only the first | A display name naming a brand on another domain fires |
 | `replyPath` | Okolos `checkReplyPath` | Reply-To on another registrable domain fires minor |
 | `links` | existing feed and lookalike checks, plus a link whose visible text names another domain than it goes to; entity-encoded and protocol-relative hrefs decoded first; a cap that was hit goes to not-run | S04 uses the per-link results |
 | `hidden` | existing `inspectMessage` | unchanged |
 | `attachments` | one entry per attachment, always (see 2) | |
 
-The arrival queue carries what these need: `ingest` gains the raw header lines it already reads for spam
-(`Authentication-Results`, `Reply-To`, `From`) for every account kind, not only Cloudflare `screen` items
-(`store.ts:37-49, 363-383`).
+The arrival queue carries what these need. Today only Cloudflare mail brings its headers (`workers/index.ts:384,699`,
+`store.ts:369`); the remote arrival path carries none (`workers/providers/accounts-do.ts:100-101`). The changes:
+`IncomingEvent` and the queue item gain `headers: {key, value}[]` (the `Authentication-Results`, `Received`, `From`,
+`Reply-To`, `List-Id` and `Delivered-To` lines, in order, capped); Gmail's metadata request adds those names to its
+header list (`workers/providers/gmail-client.ts:80-81`); Graph `$select`s `internetMessageHeaders`; IMAP fetches
+`BODY.PEEK[HEADER.FIELDS (...)]`. The Okolos sender checks take a `MailMessage` built by a small adapter from these
+headers and the stored addresses (not `parseMessage`, since remote mail has no raw source here).
 
 ### 2. Files
 
@@ -62,34 +66,48 @@ The arrival queue carries what these need: `ingest` gains the raw header lines i
   scripts, OLE and OOXML with macros, PDF, ZIP, RAR, 7z, ISO, DMG, image formats). An empty or too short read is "did
   not run (too short)", never "matches". A PDF that also carries a program signature in its first 1 KiB is flagged as
   a mixed file.
+- **Office documents:** macros cannot be seen in the first bytes (OOXML is a ZIP). The ZIP's central directory (the last
+  64 KiB, read by range) is listed for `vbaProject.bin`, `xl/macrosheets/` and `word/vbaData.xml`; no entry is
+  decompressed. A central directory that cannot be read gives "macros not checked" and a grey file chip; the absence of
+  macros is never inferred from the first bytes.
 - **Risky kinds:** the union of today's list (`files.ts:9`, with iso, img, vhd, app, xlam) and Okolos's
   `core-download` list; `html`, `htm`, `svg`, `one` are amber in mail (attached web pages are a common phishing
   method); an archive is "contents not checked".
-- **The judgement:** Okolos `judgeDownload` with `file-type` from the signature reader and `feed` and `hash` passed as
-  `ran: false` (no hash list on this server yet).
+- **The judgement:** Okolos `judgeDownload` with `url` set to `mail-attachment:<filename>` (an attachment has no
+  address; the value only names it in the verdict), `file-type` from the signature reader, and `feed` and `hash` passed
+  as `ran: false` (no hash list on this server yet).
 - **A matching type is never called safe:** the panel says what the file is, not that it is fine.
 - The signature reader is written here (`workers/safety/sniff.ts`) and offered to Okolos on its board for
   `core-download`; once Okolos has it, it is vendored instead.
 
 ### 3. The model with no tools
 
-- It is the review the server already runs, widened and bounded. It runs when a deterministic check fired at amber or
-  above, inside its own daily budget (separate from the arrival scan's), at most 20 reviews a day per sender domain;
-  turning a document into text counts against the same budget.
-- Input: the message as fenced data (the `untrusted-fence` pattern: a random fence per call, a preamble that the block
-  is data, forged fence lines neutralised), with the display name and headers inside the fence too, plus the
-  deterministic signals and the per-file judgements.
-- Output: a closed set of reason codes (`looks_like_phishing`, `asks_for_credentials`, `urgent_payment`,
-  `impersonates_brand`, `instructions_to_ai`, `likely_benign_sender_mismatch`, `unsure`) and at most two short quotes
-  from the message. No free sentence of the model is shown to a person.
-- **What it may change:**
-  - It may raise a message to amber (phishing judgement), never to red.
-  - It may lower only minor sender signals (`replyPath`, a display-name mismatch), and never to green: a lowered verdict
-    shows "Reviewed: probably fine" («Проверено: похоже, всё в порядке»), its signals still listed.
-  - It never changes the floors: a feed-listed link, a file that runs code (by name or bytes), a disguised file, a DMARC
-    fail, a lookalike From or link, instructions to an AI, a held state.
-- No budget left or the call failing: "review did not run: <why>" in the not-run list; the message keeps the colour the
-  checks gave it. A spent review budget never holds a message (the arrival scan's own fail-closed rule is unchanged).
+- **Held mail keeps today's review.** A held message is reviewed exactly as today (`reviewHeld`, output
+  `{verdict, reasons}`, its release rule and its guard against feed-listed links and files that run code,
+  `store.ts:642-647`). Nothing here changes that path.
+- **A new, separate review** (its own prompt and schema, version 1, stored under `findings.check.review` with that
+  version) runs for a message that is not held, when any deterministic check fired (any severity, minor included) or a
+  document attachment's text was read, inside its own daily budget (separate from the arrival scan's), at most 20 a day
+  per sender domain; turning a document into text counts against the same budget. It never releases, holds or
+  otherwise changes a message's safety state.
+- **Input:** one fenced block of untrusted data (the `untrusted-fence` pattern: a random fence per call, a preamble that
+  the block is data, forged fence lines neutralised), holding every attacker-derived string as structured, length-capped
+  fields: the display name, the headers, the subject, the body, link texts and hosts, file names, and the deterministic
+  signals and per-file judgements (which carry those strings).
+- **Output, validated strictly:** a closed set of reason codes (`looks_like_phishing`, `asks_for_credentials`,
+  `urgent_payment`, `impersonates_brand`, `instructions_to_ai`, `likely_benign_sender_mismatch`, `unsure`), a combination
+  table that rejects contradictions (`likely_benign_sender_mismatch` with any other code but `unsure`), and at most two
+  quotes, each kept only when it matches a span of the normalised message text exactly. Output that fails validation is
+  dropped whole: "review did not run: the answer could not be used". No free sentence of the model is ever shown.
+- **What it may change, through one pure function `colourOf` (section 4):** a raising code (`looks_like_phishing`,
+  `asks_for_credentials`, `urgent_payment`, `impersonates_brand`, `instructions_to_ai`) makes a green or grey message
+  amber; `likely_benign_sender_mismatch` alone, over minor sender signals only, makes it grey "Reviewed: probably fine"
+  (never green); nothing it says changes a floor (a feed-listed link, a file that runs code or is disguised, a DMARC fail
+  with an enforcing policy, a lookalike From or link, instructions to an AI found by the checks).
+- **Green means the deterministic checks:** a message is green when every check ran and nothing fired; the review is
+  not needed for green (it runs only where something fired), and the badge's panel says which checks made it green.
+- No budget left or the call failing: "review did not run: <why>" in the not-run list; the colour stays as the checks
+  made it. A spent review budget never holds mail (the arrival scan's own fail-closed rule is unchanged).
 
 ### 4. Colour, one table for S03, S04 and S09
 
@@ -100,15 +118,25 @@ The arrival queue carries what these need: `ingest` gains the raw header lines i
 | Grey | "Not checked" / «Не проверено» | No record: arrived before this version, the check is off, the record expired; or held only because the scan could not run (`modelError`) |
 | Amber | "Sender may be forged" / «Отправитель может быть поддельным» | Only sender signals fired (DMARC fail is red's floor only when the domain publishes `p=reject` or `p=quarantine`; otherwise amber) |
 | Amber | "Suspicious message" / «Подозрительное письмо» | Any other minor or major signal; the review raised it; an amber file |
-| Red | "Dangerous" / «Опасно» | A feed-listed link, a file that runs code or is disguised, instructions to an AI found, DMARC fail with an enforcing policy; held for any of these and not released |
+| Amber | "Suspicious message" / «Подозрительное письмо» | Held only because the light model said YES (`findings.model` alone is a model's guess, not a floor) |
+| Red | "Dangerous" / «Опасно» | A feed-listed link, a file that runs code or is disguised, instructions to an AI found by Okolos's signals (visible strong, hidden or in a file), DMARC fail with an enforcing policy; held for any of these and not released |
 | (same) | plus "Released by you" / «Вы разрешили» | A person released a held message: the colour still follows its signals |
+
+Which mail is checked: received mail in every folder. Mail we sent and drafts are not checked (they carry no receiver's
+result and their links are ours); they show no badge and their links open as written.
 
 A file's own chip uses the same colours: red for a program or a disguised file, amber for a web page, an archive, a
 macro document or a mixed file, grey for a file not checked, green for a checked one with no signal.
 
+`colourOf(findings, state, feedVersion)` is the one pure function behind the badge, S04 and S09, tested over every
+row of this table and every review code. A lowered minor sender signal is grey "Reviewed: probably fine" («Проверено:
+похоже, всё в порядке»).
+
 A message with no record is checked when it is opened: the deterministic checks only, no model, once (`POST
-/api/safety/check`); until the answer, it is grey and its links ask (S04). A record older than the feed's last update
-gets its link checks recomputed on open, without the model.
+/api/safety/check`); until the answer, it is grey and its links ask (S04). A record checked against an older feed than
+the server's current one is grey before its body renders (its links stripped by S04), and its link checks are
+recomputed on open without the model; the colour comes back only from a successful recomputation, and the body is
+rendered again from the new record. A recomputation that fails stays grey.
 
 ### 5. What a person sees
 
@@ -150,7 +178,7 @@ gets its link checks recomputed on open, without the model.
 ## Vendoring
 
 `core-mail` and `core-download` join the vendored set from `passioncode-ai/okolos` (the checkout here is
-`okolos-extension`), and all vendored packages move to one pin (the current `main` commit at build time). The rule in
+`okolos-extension`), and all vendored packages move to one pin, `aa5dc1ddce78d32f60f7bfd802096e7949ccb0e6` (Okolos `main`, 2026-11-12), reviewed in this change; a later pin is its own reviewed pull request. The rule in
 `vendor/okolos/README.md` grows by one rewrite: a bare `@okolos/<pkg>` import becomes the relative vendored path. The
 hashes go into `manifest.json`; `tests/okolos-vendor.test.ts` checks them.
 
@@ -163,7 +191,10 @@ hashes go into `manifest.json`; `tests/okolos-vendor.test.ts` checks them.
   (mixed); an `.html` attachment (amber); a ZIP (contents not checked); 12 files (10 checked, 2 not, said so); an empty
   file (did not run).
 - Unit: the review cannot raise above amber, cannot lower a floor, cannot make green; an injected "severity none" in
-  the body leaves a red verdict red.
+  the body leaves a red verdict red; malformed output, a contradicting code pair and a quote not found in the message
+  are dropped; a held message's review path is unchanged.
+- Unit: a `.docm` and an `.xlsm` (macros listed), a `.docx` without macros, a ZIP whose central directory is cut (macros
+  not checked).
 - Unit: the colour table as a pure function over findings and state, every row.
 - Worker (workerd): arrival writes `findings.check` for Cloudflare and for each remote kind's fixture; a spent review
   budget leaves "review did not run" and does not hold; `check_message_safety` and the route's scope.

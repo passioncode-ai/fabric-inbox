@@ -94,5 +94,35 @@ Every finding was accepted unless a line below says otherwise; "→" names where
 
 ## Round 2
 
-Planned: fresh readers over the revised specs (one Claude reader for build readiness and code accuracy together, Kimi
-again for the agent and security parts). The build starts when round 2 has no blocking finding.
+On commit `f17a0901`. Two fresh readers: R2 (Claude, task-pipeline verifier: build readiness, code, consistency,
+security) and KIMI again ([review/round2-kimi.md](review/round2-kimi.md)). 23 findings, 5 blocking; all applied.
+
+| Id | Severity | Disposition |
+|---|---|---|
+| R2-1, KIMI-14 | blocking | → S03 §3: held mail keeps today's `reviewHeld` and release rule unchanged; the reason-code review is a separate call for mail that is not held, versioned under `findings.check.review`, and never changes a safety state; the light model's YES alone is amber, not a floor (§4) |
+| KIMI-13 | blocking | → S03 §3 and §4: one pure `colourOf`; the review runs on any fired check, so raising is reachable; green means the deterministic checks; a lowered minor sender signal is grey "Reviewed: probably fine" |
+| KIMI-18 | blocking | → S06: every variable field inside the fence, fixed words ours; a tuning conversation (`mode=tune`) has no move, mark or discard tool |
+| KIMI-19 | blocking | → S06: Send flushes and sends the saved revision; disabled while saving, failed or conflicted; S07: retirement checks the revision in the same transaction; a card send is the reply, not a retirement |
+| R2-2 | major | → S03 §1: only the topmost header counts; Gmail also needs Google's topmost `Received`; Outlook not counted in this version (a row to study it) |
+| R2-3 | major | → S03 §1: `IncomingEvent` headers; Gmail header list, Graph `internetMessageHeaders`, IMAP header fetch; the `MailMessage` adapter |
+| R2-4 | major | → S04: links ask only when the link check cannot vouch for them; IMAP mail with clean links opens; sent mail and drafts not checked (S03 §4) |
+| R2-5 | major | → S06, S07: account runs by `runIdFor`, drafts through `getDraftReceipt(...).providerDraftId` |
+| R2-6 | major | → S06, S07: `approved_by_person` for an unedited send, `answered_by_person` for an edited one |
+| KIMI-15 | major | → S03 §3: every attacker string fenced; strict output validation; quotes kept only on an exact match |
+| KIMI-16 | major | → S03 §4: a record older than the feed is grey before render, its links stripped, restored only after a successful recomputation |
+| KIMI-17 | major | → S03 §2: macros from the ZIP central directory, never inferred from the first bytes; unreadable is "macros not checked" |
+| KIMI-20 | major | → S07: the hash of the provider's read-back in a canonical form; no hash or not comparable keeps the draft |
+| KIMI-21 | major | → S07: replies sent elsewhere caught at Sent sync by In-Reply-To or References; no subject guesses |
+| KIMI-22 | major | → S03: pinned to Okolos `aa5dc1dd` in this change; a later pin is its own reviewed change |
+| R2-7 | minor | → S08 owns running the frame script everywhere; S04 extends it |
+| R2-8 | minor | → S01: the reader keeps `full`; which count each segment shows |
+| R2-9 | minor | → S04: the three "why" strings in both languages |
+| R2-10 | minor | → S02, S05: one compact form; subject and the open cell's badge in the reader's heading |
+| R2-11 | minor | → S03 §2: `url` for an attachment; the `MailMessage` adapter |
+| R2-12 | minor | → S09: a red original goes into `leftOut` |
+| R2-13 | minor | → S11: what S01 brings to Settings; the warning on choosing a segment |
+
+## Round 3
+
+Planned on the round 2 revision, for S03, S04, S06 and S07 (the specs round 2 changed in substance): a fresh Claude
+reader and Kimi. W1 (S01, S02, S10, S11), where round 2 found nothing blocking, starts building meanwhile.

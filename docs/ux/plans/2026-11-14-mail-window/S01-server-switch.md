@@ -39,8 +39,10 @@ One control that reads as a switch of where the list comes from, not as a filter
   - not reachable: "<name> · Retry" with a warning icon, choosing it retries; the reason in the tooltip.
 - **Which is chosen:** All when the merged list is shown, else the server whose mail the list shows; choosing another
   server switches the window as today.
-- **Counts:** `readAll` returns `full: true` when a server's read came back with 50 rows; its count then shows as
-  "<n>+" («<n>+»); All's total shows "+" when any part is a lower bound.
+- **Counts:** the shown server's segment counts its unread inbox (`totalUnread`, as today). Another server's count is the
+  unread among its last 50 inbox rows: `readAll` returns `full: true` when that read came back with 50 rows, and
+  `readOtherInbox` (`app/lib/other-servers.ts:74-75`) keeps the field; a full read's count shows as "<n>+". All's total is
+  the sum, with "+" when any part is a lower bound.
 - The group chips' "All" becomes "All groups" («Все группы»).
 - Shown, as today, only in the inbox folder without a search (the merged list exists only there).
 

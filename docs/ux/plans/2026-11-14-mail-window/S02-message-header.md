@@ -19,7 +19,9 @@ Revised after review round 1 (KIMI-10, UX-18, IR-8, CB-11, CB-12, CB-21).
 
 The open message (a single one, or the open cell of a thread) shows, in this order:
 
-1. **Subject**, with the safety badge (S03) at the right of its line. The subject leads because it names the
+1. **Subject**, with the safety badge (S03) at the right of its line. In a thread the subject stays in the reader's
+   heading, and the badge there is the open cell's (it follows the open cell); other cells show only a small amber or
+   red mark with its word. The subject leads because it names the
    conversation; the operator's list put it after the recipients, recorded as decision D-S02-1 in review.md.
 2. **From:** display name and address, the address always shown.
 3. **To:** every recipient; our receiving address marked "you" («вы»), which also answers "на какой" (the separate

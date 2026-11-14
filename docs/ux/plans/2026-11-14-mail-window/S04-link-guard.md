@@ -15,12 +15,15 @@ keeps `allow-popups` (`:217`); its one script runs only with `autoSize` (`:133`)
 
 ## Target
 
-**The guard lives in the sanitizer, not in a click handler.** For a message whose colour (S03 table) is amber, red or
-grey, every `a` and `area` loses its `href` while it is sanitized (the hook that already strips feed-listed links);
+**The guard lives in the sanitizer, not in a click handler.** Links ask when the link check cannot vouch for them: the
+message is red; or amber; or the links check did not run fully (no record yet, the feed missing or older than the
+record, the link cap hit); or a link-related signal fired. A message that is grey only because another check did not run
+(sender authentication on IMAP, a file too large) keeps working links when its links check ran clean. Sent mail and
+drafts are not guarded (S03). In those cases every `a` and `area` loses its `href` while it is sanitized (the hook that already strips feed-listed links);
 it keeps a `data-okolos-link` index into a list the reader holds. A link with no `href` cannot be opened by a middle
 click, a modifier click, Enter, a drag, or the desktop menu: there is nothing to open.
 
-- The frame's script is injected for every message (not only with `autoSize`) and reports an activated link only as
+- The frame's script runs for every message (made so by S08 in W2) and reports an activated link only as
   its index (`postMessage({type: "link", index})`) on `click`, `auxclick` and Enter.
 - The reader resolves the index in its own list (never a URL from the frame), accepts only `http`, `https` and
   `mailto` after `new URL()`, requires user activation, and decides:
@@ -28,8 +31,8 @@ click, a modifier click, Enter, a drag, or the desktop menu: there is nothing to
 | Message or link | What happens |
 |---|---|
 | Red message, or a feed-listed link | A notice: where the link goes, why; "Don't open" and "Copy address" |
-| Amber or grey message, a lookalike link, or a link whose text names another domain | A notice: "This link goes to <host>", why; "Don't open" (focused) and "Open anyway" |
-| Green message | Links keep their `href` and open as today |
+| Amber message, links not fully checked, a lookalike link, or a link whose text names another domain | A notice: "This link goes to <host>", why; "Don't open" (focused) and "Open anyway" |
+| Links check ran clean and the message is green or grey for another reason | Links keep their `href` and open as today |
 
 - **The notice** is an inline alert above the message frame (`role="alert"`), focus moves to it, Escape is "Don't
   open", focus returns to the frame after. "Open anyway" is remembered for that link of that message until the window
@@ -49,13 +52,16 @@ click, a modifier click, Enter, a drag, or the desktop menu: there is nothing to
 | The safety check found this message dangerous, so its links do not open. | Проверка нашла это письмо опасным, поэтому его ссылки не открываются. |
 | This message was not fully checked, so its links ask first. | Это письмо проверено не полностью, поэтому ссылки открываются только после вопроса. |
 | The text of the link says {shown}, but it goes to {host}. | В тексте ссылки {shown}, а ведёт она на {host}. |
+| This message looks suspicious, so its links ask first. | Письмо выглядит подозрительно, поэтому ссылки открываются только после вопроса. |
+| This site is on the phishing list. | Этот сайт есть в списке фишинговых. |
+| This address imitates {resembles}. | Этот адрес подделывается под {resembles}. |
 | Don't open | Не открывать |
 | Open anyway | Всё равно открыть |
 | Copy address | Скопировать адрес |
 
 ## Acceptance
 
-- Unit: `linkDecision(colour, link)` over every row, and the scheme allowlist (`javascript:`, `data:`, `file:` and
+- Unit: `linkDecision(record, link)` over every row (an IMAP message with clean links opens directly; a stale feed asks; sent mail is not guarded), and the scheme allowlist (`javascript:`, `data:`, `file:` and
   an unparsable URL never open).
 - Unit: the sanitizer for amber, red and grey removes every `href` (`a`, `area`, SVG `a`) and keeps the index; green
   keeps them.

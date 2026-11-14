@@ -19,7 +19,7 @@ Revised after review round 1 (UX-7, UX-8, IR-8, IR-10, CB-5, CB-6, CB-21).
 ## Target
 
 1. **Order and attribution:** oldest first; every cell names who acted in its header: the compact form of S02
-   ("<name> <address> → <recipients>"), the role chip and the date. Our side's cells (a person, an agent, a rule) sit on
+   ("<name> <address> → <first recipient>, +N"), the role chip and the date. Our side's cells (a person, an agent, a rule) sit on
    the raised panel colour, received ones on the plain panel.
 2. **Nesting:** a reply that answers the cell directly above it is shown flat. A reply that answers an earlier cell is
    indented one level with a rule line, and its header carries "In reply to <name>, <date>" («В ответ на <name>,

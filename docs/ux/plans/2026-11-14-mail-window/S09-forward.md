@@ -32,7 +32,7 @@ Revised after review round 1 (KIMI-9, UX-12, UX-20, IR-7, IR-12, CB-13). Lands i
   `leftOut`. Adding the person's own file when there is no room says "No room left: remove a file first" («Места нет:
   сначала уберите файл»).
 - **The safety chip** (S03's file colour, by attachment id): amber files are attached with their chip and its word;
-  a red file is not attached by itself ("Not attached: the safety check found this file dangerous" / «Не прикреплён:
+  a red file is not attached by itself and goes into `leftOut`, so Send is not refused ("Not attached: the safety check found this file dangerous" / «Не прикреплён:
   проверка нашла файл опасным», with "Attach anyway" / «Всё равно прикрепить»); a file with no verdict is attached with
   a grey "Not checked" chip.
 - **The screen:** From (the account the message arrived at, changeable as today), To, Cc, Bcc, subject "Fwd:

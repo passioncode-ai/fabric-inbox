@@ -14,6 +14,9 @@ A quote builder with "On {date}, {sender} wrote:" exists (`app/lib/utils.ts:167-
 
 ## Target
 
+- **The frame script everywhere:** this spec makes the frame's script run for every message, not only with `autoSize`
+  (`EmailIframe.tsx:133`, `SingleMessageView.tsx:44`, `ThreadMessage.tsx:161`); S04 (W3) extends the same script.
+
 - **The hint, always:** Reply's and Reply all's tooltip reads "Select text in the message to quote it" («Выделите текст
   в письме, чтобы процитировать его»).
 - **Reading the selection:**
