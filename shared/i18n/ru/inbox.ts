@@ -3,7 +3,7 @@ export const INBOX: Readonly<Record<string, string>> = {
 	// The inbox page (app/routes/unified-inbox.tsx)
 	"All inboxes · Fabric Inbox": "Все входящие · Fabric Inbox",
 	// B-244 (app/components/inbox/ServerTabs.tsx, TriagedList.tsx): the servers the desktop app holds, in one inbox.
-	"Not reachable now": "Сейчас не отвечает",
+	"Not reachable now": "Сейчас недоступен",
 	"Opens on {server}": "Откроется на сервере {server}",
 	"Other servers": "Другие серверы",
 	"Starred": "Со звёздочкой",
@@ -243,6 +243,7 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"{n} messages selected": "Выбрано {n} письмо|Выбрано {n} письма|Выбрано {n} писем",
 	"Act on all of them at once, or press Esc to clear the selection.": "Примените действие сразу ко всем или нажмите Esc, чтобы снять выбор.",
 	"[action] Archive": "Архивировать",
+	"[action] Move": "Перенести",
 	"Discard": "Выбросить",
 	"Clear selection": "Снять выбор",
 	"Keyboard shortcuts": "Сочетания клавиш",
@@ -422,6 +423,8 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"Not saved. Your text is kept on this device.": "Не сохранено. Ваш текст сохранён на этом устройстве.",
 	"The agent's draft": "Черновик агента",
 	"Draft by {agent}, version {n}": "Черновик агента {agent}, версия {n}",
+	"{agent}, version {n}": "{agent}, версия {n}",
+	"You discarded the agent's draft. Nothing was sent.": "Вы выбросили черновик агента. Ничего не отправлено.",
 	"Draft by {agent}": "Черновик агента {agent}",
 	"Answers a message not in this thread": "Отвечает на письмо не из этой переписки",
 	"The agent's notes are not available": "Заметки агента недоступны",

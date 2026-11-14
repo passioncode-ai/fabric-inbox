@@ -1829,8 +1829,8 @@ export default function UnifiedInbox() {
                                 onTune={(request) => { setTune(request); setAgentOpen(true); }}
                                 onChanged={conversationChanged} />
                             )}
-                            renderRetired={(answered, draftId, close) => answered.message.agentRun
-                              ? <RetiredDraftNotice run={answered.message.agentRun} accountId={answered.message.accountId} draftId={draftId} onChanged={conversationChanged} onClose={close} /> : null}
+                            renderRetired={(answered, draftId, close, kind) => answered.message.agentRun
+                              ? <RetiredDraftNotice run={answered.message.agentRun} accountId={answered.message.accountId} draftId={draftId} kind={kind} onChanged={conversationChanged} onClose={close} /> : null}
                             renderOpen={() => openContent} />
                         ) : openContent}
                         </QuoteSelectionContext.Provider>

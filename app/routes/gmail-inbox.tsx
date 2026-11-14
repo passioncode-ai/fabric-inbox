@@ -518,7 +518,7 @@ function GmailAccountPage() {
                     })
                   }
                 >
-                  {t("Archive")}
+                  {t("[action] Archive")}
                 </Button>
               </div>
               <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-6">

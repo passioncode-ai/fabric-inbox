@@ -83,7 +83,8 @@ export default function ServerSwitch(props: ServerSwitchProps) {
 				content: <><SignInIcon size={14} aria-hidden="true" />{t.rich("{name} · Sign in", { name })}</> });
 		} else if (state === "unreachable") {
 			choices.push({ key: s.origin, disabled: false, title: t("Not reachable now"), act: () => onRetry(s.origin),
-				content: <><WarningIcon size={14} aria-hidden="true" />{t.rich("{name} · Retry", { name })}</> });
+				// The reason is in the tooltip on pointing, and read out with the choice (A-32: no native title).
+				content: <><WarningIcon size={14} aria-hidden="true" />{t.rich("{name} · Retry", { name })}<span className="sr-only">{" "}{t("Not reachable now")}</span></> });
 		} else {
 			choices.push({ key: s.origin, disabled: false, title: s.label, act: () => onChoose(s.origin), content: <>{name}{countText(s.origin)}</> });
 		}

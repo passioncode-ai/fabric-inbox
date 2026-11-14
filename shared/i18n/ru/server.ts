@@ -335,6 +335,7 @@ export const SERVER: Readonly<Record<string, string>> = {
 	// Triage (shared/mail/triage.ts): groups and reasons
 	"People": "Люди",
 	"Alerts": "Оповещения",
+	"Security": "Безопасность",
 	"App stores": "Магазины приложений",
 	"Billing": "Оплата",
 	"Sales": "Продажи",

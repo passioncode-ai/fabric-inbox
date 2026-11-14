@@ -146,6 +146,7 @@ A new term joins this table before its first use in `shared/i18n/ru/`.
 | Archive (folder / action) | Архив / Архивировать | |
 | Discarded / Discard (⌘⌫) | Выброшенные / Выбросить | Отброшенные, Корзина (for this folder) |
 | Not discarded (bring back) | Вернуть | |
+| Discard draft (the composer's and the agent's draft card; the draft is thrown away, not moved to Discarded) | Выбросить черновик | Удалить черновик |
 | Discard rule(s) | правило выбрасывания / Правила выбрасывания | |
 | Stop discarding mail like this | Больше не выбрасывать такую почту | |
 | Always allow | Всегда пропускать | белый список |
@@ -183,6 +184,9 @@ A new term joins this table before its first use in `shared/i18n/ru/`.
 | Check for new mail / Live | Проверить почту / В реальном времени | Синхронизировать |
 | Keyboard shortcuts | Сочетания клавиш | Горячие клавиши |
 | Your server / Server address | ваш сервер / Адрес сервера | бэкенд, инстанс |
+| Sign in (a button, a server's choice) / Sign in (the sign-in window's title) | Войти / Вход | Вход (on a button) |
+| Not reachable now (a server) | Сейчас недоступен | Сейчас не отвечает |
+| Security (the mail list's group) / Security (an IMAP account's SMTP setting, `[connection] Security`) | Безопасность / Шифрование | Шифрование (for the group) |
 | Cloudflare API token | API-токен Cloudflare | ключ Cloudflare |
 | Setup (the setup file) | конфигурация | сетап |
 | Queued / Sent / Accepted / Outcome unknown | В очереди / Отправлено / Принято / Результат неизвестен | Доставлено (for Accepted) |

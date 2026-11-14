@@ -142,5 +142,5 @@ export function whyNot(rule: RuleShape, message: TriedMessage | undefined, t: T)
 
 /** A test run's result in words: what would happen, or why nothing would. */
 export function testRunSentence(rule: RuleShape, result: TestRunResult, message: TriedMessage | undefined, t: T): string {
-  return result.matched ? wouldDo(result.action, t) : t("Would not act: {reason}", { reason: whyNot(rule, message, t) });
+  return result.matched ? wouldDo(result.action, t) : t("Would not act: {reason}.", { reason: whyNot(rule, message, t) });
 }

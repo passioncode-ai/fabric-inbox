@@ -10,6 +10,7 @@ import { useWindowActive } from "../hooks/useWindowActive";
 import { AUTOMATION_POLL_MS, pollInterval } from "../lib/window-activity";
 import { useInboxAccounts } from "../components/settings/sections/data";
 import { enableLocked, ruleReviewKey, switchOnStep } from "../lib/rule-gate";
+import { tabAfterKey } from "../lib/tab-keys";
 import {
   actionParts, defaultRuleName, hasCondition, ruleSentence, testRunSentence, toolHost, type Part, type TestRunResult,
 } from "../lib/rule-sentence";
@@ -27,6 +28,8 @@ export { enableLocked, ruleReviewKey } from "../lib/rule-gate";
  */
 const REMOTE = /^(gmail|imap|outlook):/;
 type Tab = "rules" | "history" | "sending";
+const PANEL_ID = "fi-rules-panel";
+const tabId = (tab: Tab) => "fi-rules-tab-" + tab;
 type Step = "when" | "test";
 /** Where the person came from, as the links into this screen say it (`state.from`). */
 type From = "mail" | "settings";
@@ -189,6 +192,9 @@ export default function Automation() {
   const asked = params.get("tab");
   const tab: Tab = editing ? "rules" : asked === "history" ? "history" : asked === "sending" && hasSending ? "sending" : "rules";
   const choose = (next: Tab) => setParams((p) => { if (next === "rules") p.delete("tab"); else p.set("tab", next); return p; });
+  const tabs: Tab[] = hasSending ? ["rules", "history", "sending"] : ["rules", "history"];
+  // Leaving Rules closes an open editor, as it always has; choosing Rules keeps it.
+  const pick = (next: Tab) => { if (next !== "rules") setEditing(null); choose(next); };
 
   // Back to where the person came from: the mail (its history, so the open message stays open)
   // or Settings, which is also where an unknown start goes.
@@ -218,105 +224,117 @@ export default function Automation() {
           </p>
         </header>
 
-        <div className="fi-rules-tabs" role="tablist" aria-label={t("Rules")}>
-          <button type="button" role="tab" aria-selected={tab === "rules"} onClick={() => choose("rules")}>{t("Rules")}</button>
-          <button type="button" role="tab" aria-selected={tab === "history"} onClick={() => { setEditing(null); choose("history"); }}>
-            {t("History")}
-            {waiting > 0 && (
-              <span className="fi-rules-count" aria-label={t.plural(waiting, { one: "{n} waits for you", other: "{n} wait for you" })}>{waiting}</span>
-            )}
-          </button>
-          {hasSending && (
-            <button type="button" role="tab" aria-selected={tab === "sending"} onClick={() => { setEditing(null); choose("sending"); }}>{t("Sending")}</button>
-          )}
+        {/* A-29: a tab list as WAI-ARIA describes it: one tab in the Tab order (the chosen one), Left
+            and Right, Home and End move along it, and the panel below names the tab that shows it. */}
+        <div className="fi-rules-tabs" role="tablist" aria-label={t("Rules")} onKeyDown={(e) => {
+          const next = tabAfterKey(tabs, tab, e.key);
+          if (!next) return;
+          e.preventDefault();
+          pick(next);
+          (e.currentTarget.querySelector(`#${tabId(next)}`) as HTMLElement | null)?.focus();
+        }}>
+          {tabs.map((id) => (
+            <button key={id} type="button" role="tab" id={tabId(id)} aria-selected={tab === id} aria-controls={PANEL_ID}
+              tabIndex={tab === id ? 0 : -1} onClick={() => pick(id)}>
+              {id === "rules" ? t("Rules") : id === "history" ? t("History") : t("Sending")}
+              {id === "history" && waiting > 0 && (
+                <>
+                  <span className="fi-rules-count" aria-hidden="true">{waiting}</span>
+                  <span className="fi-visually-hidden">{t.plural(waiting, { one: "{n} waits for you", other: "{n} wait for you" })}</span>
+                </>
+              )}
+            </button>
+          ))}
         </div>
 
         {notice && <p role="alert" className="fi-callout is-bad">{notice}</p>}
 
-        {tab === "rules" && (editing ? (
-          <RuleEditor
-            key={editing.rule.id + editing.step}
-            account={account}
-            base={base}
-            start={editing}
-            tested={tested}
-            onTested={addTested}
-            onClose={() => setEditing(null)}
-            onSaved={async () => { setEditing(null); await Promise.all([rules.refetch(), runs.refetch()]); }}
-          />
-        ) : (
-          <section aria-label={t("Rules")}>
-            {rules.isPending ? (
-              <p role="status" className="fi-hint">{t("Loading rules…")}</p>
-            ) : rules.isError ? (
-              <div className="fi-load-failure" role="alert">
-                <p>{t("The rules could not load: {reason}", { reason: t.text(rules.error.message) })}</p>
-                <button type="button" className="fi-secondary" onClick={() => void rules.refetch()}>{t("Retry")}</button>
-              </div>
-            ) : rules.data.length === 0 ? (
-              <div className="fi-rules-empty">
-                <p>{t("A rule acts on new mail that arrives here.")}</p>
-                <p className="fi-hint">{t("Start from one of these, or from nothing:")}</p>
-                <ul className="fi-rules-starts">
-                  {startingPoints(t).map((s) => (
-                    <li key={s.label}><button type="button" className="fi-secondary" onClick={() => open(s.rule(), "when", true)}>{s.label}</button></li>
-                  ))}
-                </ul>
-                <button type="button" className="fi-text-button" onClick={() => open(fresh(), "when", true)}>{t("New rule")}</button>
-              </div>
-            ) : (
-              <>
-                <div className="fi-rules-toolbar">
-                  <p className="fi-hint">{t("A rule acts on new mail that arrives here.")}</p>
-                  <button type="button" className="fi-primary" onClick={() => open(fresh(), "when", true)}>{t("New rule")}</button>
+        <div role="tabpanel" id={PANEL_ID} aria-labelledby={tabId(tab)}>
+          {tab === "rules" && (editing ? (
+            <RuleEditor
+              key={editing.rule.id + editing.step}
+              account={account}
+              base={base}
+              start={editing}
+              tested={tested}
+              onTested={addTested}
+              onClose={() => setEditing(null)}
+              onSaved={async () => { setEditing(null); await Promise.all([rules.refetch(), runs.refetch()]); }}
+            />
+          ) : (
+            <div>
+              {rules.isPending ? (
+                <p role="status" className="fi-hint">{t("Loading rules…")}</p>
+              ) : rules.isError ? (
+                <div className="fi-load-failure" role="alert">
+                  <p>{t("The rules could not load: {reason}", { reason: t.text(rules.error.message) })}</p>
+                  <button type="button" className="fi-secondary" onClick={() => void rules.refetch()}>{t("Retry")}</button>
                 </div>
-                <ul className="fi-rules-list">
-                  {rules.data.map((rule) => (
-                    <li key={rule.id} className={"fi-rules-card" + (rule.enabled ? "" : " is-paused")}>
-                      <div className="fi-rules-card-main">
-                        <h2>{rule.name}{!rule.enabled && <span className="fi-badge">{t("[rule] Paused")}</span>}</h2>
-                        <p className="fi-rules-sentence"><Sentence parts={ruleSentence(rule, t)} /></p>
-                      </div>
-                      <div className="fi-rules-card-side">
-                        <button type="button" role="switch" aria-checked={rule.enabled} className="fi-rules-switch" disabled={busy}
-                          aria-label={t("Turned on: {name}", { name: rule.name })} onClick={() => void toggle(rule)}>
-                          <span aria-hidden="true" />{rule.enabled ? t("[rule] On") : t("[rule] Off")}
-                        </button>
-                        <button type="button" className="fi-secondary" onClick={() => open(rule)}>{t("Edit")}</button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </section>
-        ))}
-
-        {tab === "history" && <History base={base} account={account} runs={runs} />}
-
-        {tab === "sending" && (
-          <section aria-label={t("Sending")}>
-            <p className="fi-hint">{t("“Handed to the mail provider” means the provider took the message; whether it reached the person is not known.")}</p>
-            {outbox.error && <p role="alert" className="fi-callout is-warn">{t("What is being sent could not load.")}</p>}
-            <ul className="fi-rules-runs">
-              {outbox.data?.map((item) => (
-                <li key={item.id} className="fi-rules-run">
-                  <div className="fi-rules-run-head">
-                    <span className={"fi-badge" + (item.status === "accepted" ? " is-ok" : item.status === "failed" ? " is-bad" : item.status === "unknown" ? " is-warn" : " is-busy")}>
-                      {sendingState(item.status, t)}
-                    </span>
-                    <span className="fi-hint">{t.dateTime(item.createdAt)}</span>
+              ) : rules.data.length === 0 ? (
+                <div className="fi-rules-empty">
+                  <p>{t("A rule acts on new mail that arrives here.")}</p>
+                  <p className="fi-hint">{t("Start from one of these, or from nothing:")}</p>
+                  <ul className="fi-rules-starts">
+                    {startingPoints(t).map((s) => (
+                      <li key={s.label}><button type="button" className="fi-secondary" onClick={() => open(s.rule(), "when", true)}>{s.label}</button></li>
+                    ))}
+                  </ul>
+                  <button type="button" className="fi-text-button" onClick={() => open(fresh(), "when", true)}>{t("New rule")}</button>
+                </div>
+              ) : (
+                <>
+                  <div className="fi-rules-toolbar">
+                    <p className="fi-hint">{t("A rule acts on new mail that arrives here.")}</p>
+                    <button type="button" className="fi-primary" onClick={() => open(fresh(), "when", true)}>{t("New rule")}</button>
                   </div>
-                  <details className="fi-rules-details">
-                    <summary>{t("Details")}</summary>
-                    <p className="fi-hint">{item.id}</p>
-                    {item.errorCode && <p className="fi-hint">{item.errorCode}</p>}
-                  </details>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
+                  <ul className="fi-rules-list">
+                    {rules.data.map((rule) => (
+                      <li key={rule.id} className={"fi-rules-card" + (rule.enabled ? "" : " is-paused")}>
+                        <div className="fi-rules-card-main">
+                          <h2>{rule.name}{!rule.enabled && <span className="fi-badge">{t("[rule] Paused")}</span>}</h2>
+                          <p className="fi-rules-sentence"><Sentence parts={ruleSentence(rule, t)} /></p>
+                        </div>
+                        <div className="fi-rules-card-side">
+                          <button type="button" role="switch" aria-checked={rule.enabled} className="fi-rules-switch" disabled={busy}
+                            aria-label={t("Turned on: {name}", { name: rule.name })} onClick={() => void toggle(rule)}>
+                            <span aria-hidden="true" />{rule.enabled ? t("[rule] On") : t("[rule] Off")}
+                          </button>
+                          <button type="button" className="fi-secondary" onClick={() => open(rule)}>{t("Edit")}</button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+          ))}
+
+          {tab === "history" && <History base={base} account={account} runs={runs} />}
+
+          {tab === "sending" && (
+            <div>
+              <p className="fi-hint">{t("“Handed to the mail provider” means the provider took the message; whether it reached the person is not known.")}</p>
+              {outbox.error && <p role="alert" className="fi-callout is-warn">{t("What is being sent could not load.")}</p>}
+              <ul className="fi-rules-runs">
+                {outbox.data?.map((item) => (
+                  <li key={item.id} className="fi-rules-run">
+                    <div className="fi-rules-run-head">
+                      <span className={"fi-badge" + (item.status === "accepted" ? " is-ok" : item.status === "failed" ? " is-bad" : item.status === "unknown" ? " is-warn" : " is-busy")}>
+                        {sendingState(item.status, t)}
+                      </span>
+                      <span className="fi-hint">{t.dateTime(item.createdAt)}</span>
+                    </div>
+                    <details className="fi-rules-details">
+                      <summary>{t("Details")}</summary>
+                      <p className="fi-hint">{item.id}</p>
+                      {item.errorCode && <p className="fi-hint">{item.errorCode}</p>}
+                    </details>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -360,7 +378,7 @@ function History({ base, account, runs }: { base: string; account: string; runs:
   );
   if (runs.data.length === 0) return <p className="fi-rules-empty fi-hint">{t("Nothing yet. When a turned-on rule matches new mail, it shows here.")}</p>;
   return (
-    <section aria-label={t("History")}>
+    <div>
       {failure && <p role="alert" className="fi-callout is-bad">{failure}</p>}
       <ul className="fi-rules-runs">
         {runs.data.map((run) => {
@@ -418,7 +436,7 @@ function History({ base, account, runs }: { base: string; account: string; runs:
           );
         })}
       </ul>
-    </section>
+    </div>
   );
 }
 

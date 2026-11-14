@@ -35,7 +35,9 @@ column first (Dry-run → Test run); the Russian «Пробный запуск»
 - **Header:** "Rules for <name>" with the provider; a back link to where the person came from ("Back to mail" or "Back
   to settings", from the navigation state; Settings when unknown).
 - **Tabs:** Rules («Правила»); History («История») with a count of runs waiting for the person; Sending («Отправка», the
-  outbox) only when it has items.
+  outbox) only when it has items. A tab list (fix wave F3, A-29): only the chosen tab is in the Tab order, Left and
+  Right move to the previous and next tab and wrap, Home and End go to the first and the last, and the one panel below is
+  labelled by the chosen tab; the waiting count is visible, with its words ("1 waits for you") for a screen reader.
 - **States:** loading, the rules failing to load (Retry), a save failing (the form kept, the reason in words), a narrow
   window (the editor's steps stack).
 
@@ -55,7 +57,8 @@ column first (Dry-run → Test run); the Russian «Пробный запуск»
      fields (tool server, tool, arguments, credential) and a line on what it does.
   3. **How** («Как»): "Ask me before each action" (default) or "Act on its own"; "At most N actions a day".
   4. **Test run** («Пробный запуск»): pick one of the last 20 messages; the result in words ("Would forward it to …",
-     "Would not act: the subject does not contain 'invoice'"), acting on nothing.
+     "Would not act: the subject does not contain 'invoice'."), a whole sentence before "Nothing was changed." (A-28),
+     acting on nothing.
   "Turn on" is enabled after a test run of the current values; while it is not, the reason sits next to it ("Test-run
   it on a message first, so you see what it will do"). "Save without turning on" is always allowed.
 
