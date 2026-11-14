@@ -126,7 +126,7 @@ export function SettingsServersHeader() {
 	if (!model) return null;
 	return (
 		<header className="fi-settings-servers">
-			<p className="fi-settings-server-title">{t("Settings · {name}", { name: model.shownLabel })}</p>
+			<p className="fi-settings-server-title">{t("Settings · {name}", { name: model.current === "all" ? t("All servers") : model.shownLabel })}</p>
 			<ServerSwitch servers={model.servers} states={model.states} current={model.current} allMode={model.allMode}
 				allReason={t("This section belongs to one server")} onChoose={model.onChoose} onRetry={model.onRetry} onSignIn={model.onSignIn} />
 		</header>

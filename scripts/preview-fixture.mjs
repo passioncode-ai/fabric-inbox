@@ -203,6 +203,28 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
+  // S10 (B-275): one address's rules, runs and outbox for the rules screen.
+  if (url.pathname.startsWith("/api/automation/") && url.pathname.endsWith("/rules")) {
+    json(process.env.PREVIEW_NO_RULES === "1" ? [] : [
+      { id: "r1", version: 3, name: "Invoices", enabled: true, mode: "approval", conditions: { from: "billing@acme.example", subject: "invoice" },
+        action: { type: "forward", to: "accounts@owner.example" }, dailyLimit: 20 },
+      { id: "r2", version: 1, name: "Newsletters", enabled: false, mode: "automatic", conditions: { ai: "a newsletter or a product digest" },
+        action: { type: "archive" }, dailyLimit: 50 },
+    ]);
+    return;
+  }
+  if (url.pathname.startsWith("/api/automation/") && url.pathname.endsWith("/runs")) {
+    const rule = { id: "r1", version: 3, name: "Invoices", enabled: true, mode: "approval", conditions: { from: "billing@acme.example", subject: "invoice" }, action: { type: "forward", to: "accounts@owner.example" }, dailyLimit: 20 };
+    json([
+      { id: "run1", key: "k1", account: "hello@example.com", emailId: "message-4", subject: "Invoice for September", rule, status: "waiting_approval", createdAt: at(1), updatedAt: at(1), attempts: 1, actions: [] },
+      { id: "run2", key: "k2", account: "hello@example.com", emailId: "message-9", subject: "Invoice for August", rule, status: "succeeded", createdAt: at(30), updatedAt: at(30), attempts: 1, actions: [] },
+    ]);
+    return;
+  }
+  if (url.pathname.endsWith("/outbox")) {
+    json([]);
+    return;
+  }
   if (url.pathname === "/api/agent-status") {
     json({ enabled: false, domains: { "example.com": true }, addresses: {} });
     return;
