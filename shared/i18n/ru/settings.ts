@@ -481,4 +481,16 @@ export const SETTINGS: Readonly<Record<string, string>> = {
 	"{who} made the agent key {name} ask again before people and keys": "Ключ агента {name} снова спрашивает перед выдачей людей и ключей ({who})",
 	"A key can manage people and keys without you, nothing else: standing [\"people\", \"keys\"].": "Без вас ключ может управлять только людьми и ключами: standing [\"people\", \"keys\"].",
 	"Only an Admin key can manage people and keys without asking you.": "Без вашего вопроса людьми и ключами может управлять только ключ уровня «Администратор».",
+	// S11 (B-276): Settings name their server; the server switch (app/components/ServerSwitch.tsx, app/components/settings/servers.tsx)
+	"Settings · {name}": "Настройки · {name}",
+	"This section belongs to one server": "Этот раздел относится к одному серверу",
+	"Which server?": "На каком сервере?",
+	"The agent console session will stop": "Сессия консоли агента остановится",
+	"Open {server}": "Открыть {server}",
+	"{name} · Sign in": "{name} · Войти",
+	"{name} · Retry": "{name} · Повторить",
+	"All servers": "Все серверы",
+	"the account of {server}": "аккаунт сервера {server}",
+	"{n} accounts": "{n} аккаунт|{n} аккаунта|{n} аккаунтов",
+	"None on this server yet": "На этом сервере пока ничего нет",
 };

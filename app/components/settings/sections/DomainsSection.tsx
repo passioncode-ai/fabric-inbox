@@ -92,7 +92,7 @@ export default function DomainsSection({ id }: { id: string | null }) {
   );
 
   return (
-    <SectionLayout section="domains" hasSelection={!!id} list={listView} panel={panel}
+    <SectionLayout section="domains" hasSelection={!!id} list={listView} panel={panel} ownCount={list ? list.domains.length : null}
       toolbar={<ListSearch value={query} onChange={setQuery} placeholder="example.com" label={t("Find a domain")} />}
       footer={list?.connected ? <p>{t.plural(list.domains.length, {
         one: "{n} domain, {served} receiving here.",

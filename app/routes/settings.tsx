@@ -11,6 +11,7 @@ import { Link, Navigate, useParams, type MetaArgs } from "react-router";
 import { MemberAgents } from "../components/settings/MemberAgents";
 import { DEFAULT_SECTION, SECTIONS, isSection, settingsPath, type SectionId } from "~/components/settings/paths";
 import { ConfirmProvider, WorkProvider } from "~/components/settings/ui";
+import { SettingsServersHeader, SettingsServersProvider } from "~/components/settings/servers";
 import { StepMemory } from "~/components/settings/sections/data";
 import type { Step } from "~/services/domains";
 import AddressesSection from "~/components/settings/sections/AddressesSection";
@@ -87,6 +88,7 @@ export default function Settings() {
 
 	return (
 		<ConfirmProvider>
+			<SettingsServersProvider section={section}>
 			<StepMemory.Provider value={memory}>
 				<div className="fi-settings">
 					<nav ref={nav} className="fi-settings-nav" aria-label={t("Settings sections")}>
@@ -107,6 +109,8 @@ export default function Settings() {
 						))}
 					</nav>
 					<main className="fi-settings-main">
+						{/* S11 (B-276): with two or more servers, which one Settings change, and the switch. */}
+						<SettingsServersHeader />
 						<WorkProvider key={section}>
 							{section === "addresses" && <AddressesSection id={item} tab={sub} />}
 							{section === "domains" && <DomainsSection id={item} />}
@@ -125,6 +129,7 @@ export default function Settings() {
 					</main>
 				</div>
 			</StepMemory.Provider>
+			</SettingsServersProvider>
 		</ConfirmProvider>
 	);
 }

@@ -512,3 +512,39 @@ select.fi-input { padding-right: 28px; }
   .fi-address-row > .fi-combo { grid-column: 1 / -1; }
   .fi-steps-live .fi-step { grid-template-columns: minmax(0, 1fr); gap: 0; }
 }
+
+/* S11 (B-276, SCN-099): with two or more servers, Settings name the server they change, with the switch beside it. */
+.fi-settings-main:has(> .fi-settings-servers) { grid-template-rows: auto minmax(0, 1fr); }
+.fi-settings-servers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--pc-border);
+  background: var(--pc-panel);
+}
+.fi-settings-server-title { margin: 0; font-weight: 650; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Under All: the shown server's list in its group, then every other held server's. */
+.fi-server-group + .fi-server-group { border-top: 1px solid var(--pc-border); }
+.fi-server-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 18px 2px;
+  font-size: 12px;
+  font-weight: 650;
+}
+.fi-server-group-head .fi-server-name { min-width: 0; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fi-server-group-count { color: var(--pc-text-muted); font-weight: 400; }
+.fi-server-group-note { margin: 0; padding: 6px 18px 12px; color: var(--pc-text-muted); font-size: 12px; }
+.fi-server-group-note p { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; }
+.fi-server-group-action { display: inline-flex; align-items: center; gap: 6px; margin: 6px 18px 12px; }
+.fi-server-group-note .fi-server-group-action { margin: 0; }
+.fi-other-row { width: 100%; border: 0; background: transparent; text-align: left; }
+.fi-other-row:hover { background: var(--pc-panel-raised); }
+.fi-which-server { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; }
+.fi-which-server label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.fi-which-server label.is-disabled { color: var(--pc-text-muted); }

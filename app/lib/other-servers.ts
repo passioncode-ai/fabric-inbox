@@ -58,6 +58,24 @@ export function serversBridge(): ServersBridge | null {
 		: null;
 }
 
+/**
+ * S11 (B-276): the bridge's read of the other servers' settings lists (fabric:other-settings), detected on its own: an
+ * older desktop build without it keeps the mail switch (serversBridge) and Settings simply show one server.
+ */
+export function otherSettingsBridge(): ((kind: string) => Promise<unknown>) | null {
+	if (!serversBridge()) return null;
+	const bridge = (window as unknown as { fabricDesktop?: { otherSettings?: unknown } }).fabricDesktop;
+	return typeof bridge?.otherSettings === "function" ? (kind: string) => (bridge.otherSettings as (k: string) => Promise<unknown>)(kind) : null;
+}
+
+/** S11: whether an agent console session runs, so a switch of server says first that it stops; false when unknown. */
+export async function consoleRunning(): Promise<boolean> {
+	if (typeof window === "undefined") return false;
+	const bridge = (window as unknown as { fabricDesktop?: { consoleRunning?: () => Promise<unknown> } }).fabricDesktop;
+	if (typeof bridge?.consoleRunning !== "function") return false;
+	try { return (await bridge.consoleRunning()) === true; } catch { return false; }
+}
+
 /** The bridge's list, kept to well-formed entries. */
 export function readServers(value: unknown): HeldServer[] {
 	if (!Array.isArray(value)) return [];

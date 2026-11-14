@@ -10,6 +10,7 @@ import { Link, useBlocker, useNavigate } from "react-router";
 import { useT } from "../../lib/i18n";
 import { LIST_KEYS, nextIndex, type ListEntry, type ListGroup, type ListKey } from "./list-model";
 import { sectionInfo, type SectionId } from "./paths";
+import { useSettingsServers } from "./servers-context";
 import { msg } from "../../../shared/i18n";
 
 /* ------------------------------------------------------------------ toasts */
@@ -445,11 +446,15 @@ export function ListSearch({ value, onChange, placeholder, label }: { value: str
  * A section: the list on the left and the selected item's panel on the right. Below 930px the
  * panel takes the list's place and has a Back button; the list keeps its scroll position.
  */
-export function SectionLayout({ section, toolbar, list, panel, hasSelection, footer }: {
+export function SectionLayout({ section, toolbar, list, panel, hasSelection, footer, ownCount = null }: {
   section: SectionId; toolbar?: ReactNode; list: ReactNode; panel: ReactNode; hasSelection: boolean; footer?: ReactNode;
+  /** S11: how many items this server has, for its group's heading under All (null while unknown). */
+  ownCount?: number | null;
 }) {
   const t = useT();
   const info = sectionInfo(section);
+  // S11 (B-276): under All, the list sits in this server's group with every other held server's below it.
+  const grouped = useSettingsServers()?.wrapList(section, ownCount, list) ?? null;
   return (
     <div className={"fi-section" + (hasSelection ? " has-selection" : "")}>
       <div className="fi-section-list">
@@ -458,7 +463,7 @@ export function SectionLayout({ section, toolbar, list, panel, hasSelection, foo
           <p>{t.text(info.description)}</p>
           {toolbar && <div className="fi-section-tools">{toolbar}</div>}
         </header>
-        <div className="fi-section-scroll" data-scroll="list">{list}</div>
+        <div className="fi-section-scroll" data-scroll="list">{grouped ?? list}</div>
         {footer && <div className="fi-section-foot">{footer}</div>}
       </div>
       <div className="fi-section-panel">{panel}</div>

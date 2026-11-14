@@ -3,7 +3,7 @@
 // the setup chosen in the first-run window, hearing that the Mac woke from sleep so it can read new
 // mail at once (P1-4), reading and setting this Mac's interface language (L10N-01), so the app's
 // menus and windows follow Settings → App → Language, the agent console, and (B-244 D-2) the other
-// servers the app holds: their list, their inboxes and showing one of them. main.cjs answers the
+// servers the app holds: their list, their inboxes, their settings lists (S11) and showing one of them. main.cjs answers the
 // shown page's main frame (policy.isMailSender), the servers' calls any held server's page at its own
 // main frame (policy.heldPageOrigin), and sends the wake signal only to the mail window's pages.
 const { contextBridge, ipcRenderer } = require('electron');
@@ -29,6 +29,11 @@ contextBridge.exposeInMainWorld('fabricDesktop', Object.freeze({
   servers: () => ipcRenderer.invoke('fabric:servers'),
   otherInbox: () => ipcRenderer.invoke('fabric:other-inbox'),
   showServer: (origin, link) => ipcRenderer.invoke('fabric:show-server', String(origin), link === undefined ? undefined : String(link)),
+  // S11 (B-276): Settings under All read the other servers' accounts, addresses or domains
+  // ({ kind, servers: [{ origin, label, state, items }] }), and ask whether an agent console session runs before a
+  // switch of server would stop it. No data of one server is sent to another.
+  otherSettings: (kind) => ipcRenderer.invoke('fabric:other-settings', String(kind)),
+  consoleRunning: () => ipcRenderer.invoke('fabric:console-running'),
   // Receive-only: the page passes a callback and gets back its unsubscribe; no data crosses.
   onResume: (callback) => {
     if (typeof callback !== 'function') return () => {};

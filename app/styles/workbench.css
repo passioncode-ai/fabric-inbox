@@ -2002,3 +2002,33 @@ body.fi-resizing { cursor: col-resize; user-select: none; }
 .fi-add-links.is-compact .fi-add-label {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
+
+/* S11, S01 (B-276, B-267; SCN-099): the server switch (app/components/ServerSwitch.tsx), one control wherever a screen
+   shows one server of several. Segments on .fi-segmented up to four servers, a menu for five or more; 28 px tall in
+   every state, a long name cut at 160 px with its full name in the title. */
+.fi-server-switch { display: inline-flex; min-width: 0; max-width: 100%; position: relative; }
+.fi-server-switch-segments { border-radius: var(--pc-radius-control); max-width: 100%; }
+.fi-server-switch .fi-server-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  height: 28px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--pc-text-muted);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.fi-server-switch-segments .fi-server-choice + .fi-server-choice { border-left: 1px solid var(--pc-border); }
+.fi-server-switch .fi-server-choice[aria-current="page"] { background: var(--pc-accent-soft); color: var(--pc-text); font-weight: 600; }
+.fi-server-switch .fi-server-choice[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; }
+.fi-server-switch .fi-server-choice > .fi-server-name { min-width: 0; max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+.fi-server-switch .fi-server-count { color: var(--pc-text-muted); font-variant-numeric: tabular-nums; }
+.fi-server-switch .fi-server-switch-trigger { border: 1px solid var(--pc-border); border-radius: var(--pc-radius-control); }
+.fi-server-switch .fi-server-switch-list { position: absolute; top: calc(100% + 4px); left: 0; right: auto; z-index: 20; min-width: 200px; }
+.fi-server-switch-list .fi-server-choice { width: 100%; justify-content: flex-start; }
