@@ -56,10 +56,10 @@ test("L10N-02: English is the key; a missing entry shows English, never a key; p
   // A context in brackets separates two meanings of one English word and never shows in English.
   assert.equal(englishT("[menu] Edit"), "Edit");
   assert.equal(ru("[menu] Edit"), "Правка");
-  assert.deepEqual(interpolate(ru("{item} looks for a newer version now."), { item: 1 as unknown as string }), ["1", " — сразу ищет новую версию."]);
+  assert.deepEqual(interpolate(ru("{item} looks for a newer version now."), { item: 1 as unknown as string }), ["1", ": сразу ищет новую версию."]);
   const nodes = ru.rich("{item} chooses the server this app opens.", { item: { el: "strong" } });
   assert.deepEqual(nodes[0], { el: "strong" });
-  assert.equal(nodes[1], " — выбирает сервер, который открывает приложение.");
+  assert.equal(nodes[1], ": выбирает сервер, который открывает приложение.");
 });
 
 test("L10N-03: Russian counts take one, few and many; English one and other; fractions read as few", () => {
