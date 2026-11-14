@@ -214,3 +214,16 @@ export function sourceMessage(accountId: string, source: Source, listed: InboxMe
 		...(source.threadId ? { threadId: source.threadId } : {}),
 	};
 }
+
+/** The chat box's tallest size for an ordinary message (it then scrolls). */
+export const INPUT_MAX_PX = 100;
+
+/**
+ * How tall the chat box is (A-7): its text's height up to a cap, then it scrolls. An ordinary message is capped at
+ * 100 px; the prepared tuning message (about 1,000 characters) is read and edited before it is sent, so while tuning the
+ * box grows to half the panel.
+ */
+export function chatInputSize(content: number, tuning: boolean, panel: number): { height: number; overflow: "auto" | "hidden"; max: number } {
+	const max = tuning ? Math.max(INPUT_MAX_PX, Math.floor(panel / 2)) : INPUT_MAX_PX;
+	return { height: Math.min(Math.max(content, 0), max), overflow: content > max ? "auto" : "hidden", max };
+}

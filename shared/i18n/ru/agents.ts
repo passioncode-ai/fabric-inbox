@@ -369,6 +369,7 @@ export const AGENTS: Readonly<Record<string, string>> = {
 	"Stop generating": "Остановить ответ",
 	"Ask your email agent...": "Спросите почтового агента…",
 	"Chat message input": "Сообщение для агента",
+	"The prepared message: read and change it before you send it": "Подготовленное сообщение: прочитайте и, если нужно, измените его перед отправкой",
 	"Failed to connect to agent. Reload to retry.": "Не удалось подключиться к агенту. Перезагрузите страницу и попробуйте снова.",
 	"Connecting...": "Подключаемся…",
 	"Failed to load agent panel": "Не удалось загрузить панель агента",

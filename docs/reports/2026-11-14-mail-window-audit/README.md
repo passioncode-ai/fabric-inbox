@@ -144,6 +144,21 @@ The two blocking findings (A-1, A-2) and the major ones are the fix waves' first
 with its test and a walk on this fixture (`FIXTURE_PORT=5175 PREVIEW_ACTIONS=1 node
 scripts/preview-fixture.mjs` behind `npm run dev -- --port 5174`).
 
+## Fixed in wave F2
+
+The agent's draft card (S06, S07), its list row, the run panel and the tuning box. Tests:
+`tests/agent-draft-card-audit.test.ts` (new) and `tests/agent-draft-card.test.ts`; a WebKit walk on the fixture at
+1400x900 (English, Russian) and 900x700 (English).
+
+| ID | Fixed in | What changed |
+|---|---|---|
+| A-5 | b05a4b32 | `retiredCards` tells a discard (`superseded`) from a retirement; the card turns into "You discarded the agent's draft. Nothing was sent." with "Make a draft of it again" and Close (`RetiredDraftNotice`, `kind`). |
+| A-6 | b05a4b32 | `cardToShow` picks the card answering the open message (else the last waiting one); `cardNeedsScroll` scrolls it to the pane's top when its top is above the pane or less than 160 px of it shows; placed again while the cells above load (2.5 s, ended by a scroll, key or click). Walk at 900x700: the open message's card fully in view. |
+| A-7 | b05a4b32 | The chat box sizes itself after every change, placed or typed (`chatInputSize`): an ordinary message up to 100 px, the prepared tuning message up to half the panel, then it scrolls; it starts with 8 rows and the label "The prepared message: read and change it before you send it". Walk: 408 px at 1400x900. |
+| A-15 | b05a4b32 | `statusRepeatsDraft`: the row's status mark is left out while "Draft waiting" says the same; another state (New after the agent) still shows. |
+| A-26 | b05a4b32 | `useAgentName` (`app/components/inbox/agent-name.ts`), the card's own read of `GET /api/agents/:id`, names the agent in the sent cell and the run panel ("Support desk, version 2"); a member, or a name not read, gets the id. |
+| A-27 | b05a4b32 | «Выбросить черновик» on the card and in the composer (one key, one meaning: the draft is thrown away); the composer's messages about it say «выбросить» too; a terminology row forbids «Удалить черновик». The legacy screens' "[draft] Discard" is another key and was left. |
+
 ## Fixed in wave F3
 
 | Finding | Fixed in | How |

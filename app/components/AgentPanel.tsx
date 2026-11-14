@@ -20,7 +20,7 @@ import {
 	WarningCircleIcon,
 	ArrowClockwiseIcon,
 } from "@phosphor-icons/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useParams } from "react-router";
 import AgentMarkdown from "~/components/AgentMarkdown";
 import { useT } from "../lib/i18n";
@@ -28,7 +28,7 @@ import { msg } from "../../shared/i18n";
 import { useUIStore } from "~/hooks/useUIStore";
 import type { UIMessage } from "ai";
 import { tuneName } from "../../shared/agent-tune";
-import { draftOf, lastPrompt, MAX_SOURCES, retryTurn, sourcesOf, toolNameOf, turnFailed, unanswered, usesDraftTool, type SavedDraft, type Source } from "./agent-chat";
+import { chatInputSize, draftOf, lastPrompt, MAX_SOURCES, retryTurn, sourcesOf, toolNameOf, turnFailed, unanswered, usesDraftTool, type SavedDraft, type Source } from "./agent-chat";
 
 /**
  * Where the panel sits decides what its links do: on the unified inbox a source opens in the reader
@@ -296,6 +296,9 @@ export function MessageBubble({
 	);
 }
 
+/** A layout effect in the browser (no flash of a one-line box), a plain effect when rendered on a server or in a test. */
+const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
 /** The chat itself, given the agent client hooks (loaded lazily below; fakes in tests). */
 export function AgentChatConnected({
 	mailboxId,
@@ -314,7 +317,9 @@ export function AgentChatConnected({
 	const t = useT();
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const inputRef = useRef<HTMLTextAreaElement>(null);
-	const [inputValue, setInputValue] = useState("");
+	const panelRef = useRef<HTMLDivElement>(null);
+	// S06: a tuning session starts with its prepared message in the box (also on the first render, A-7).
+	const [inputValue, setInputValue] = useState(tune?.prepared ?? "");
 	const { startCompose } = useUIStore();
 
 	// S06: a tuning session is its own agent instance; the ordinary conversation never holds its fenced block.
@@ -354,12 +359,24 @@ export function AgentChatConnected({
 		wasStreaming.current = isStreaming;
 	}, [isStreaming]);
 
+	// A-7: the box grows with its text (the prepared tuning message to half the panel), set after every change, typed
+	// or placed, so the person reads what they are about to send.
+	const sizeInput = () => {
+		const field = inputRef.current;
+		if (!field) return;
+		field.style.height = "auto";
+		const size = chatInputSize(field.scrollHeight, !!tune, panelRef.current?.clientHeight ?? 0);
+		field.style.maxHeight = `${size.max}px`;
+		field.style.height = `${size.height}px`;
+		field.style.overflow = size.overflow;
+	};
+	useIsoLayoutEffect(sizeInput, [inputValue, tune?.runId, isStreaming]);
+
 	const handleSend = () => {
 		const text = inputValue.trim();
 		if (!text || isStreaming) return;
 		setInputValue("");
 		sendMessage({ text });
-		if (inputRef.current) inputRef.current.style.height = "auto";
 	};
 
 	const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -390,7 +407,7 @@ export function AgentChatConnected({
 	];
 
 	return (
-		<div className="flex flex-col h-full">
+		<div ref={panelRef} className="flex flex-col h-full">
 			{/* Header */}
 			<div className="flex items-center justify-between px-3 py-1.5 border-b border-kumo-line shrink-0">
 				<div className="flex items-center gap-2">
@@ -530,17 +547,10 @@ export function AgentChatConnected({
 							onChange={(e) => setInputValue(e.target.value)}
 							onKeyDown={handleKeyDown}
 							placeholder={t("Ask your email agent...")}
-							rows={1}
-							aria-label={t("Chat message input")}
-							className="flex-1 resize-none rounded-lg border border-kumo-line bg-kumo-control px-3 py-2 text-xs text-kumo-default placeholder:text-kumo-subtle focus:outline-none focus:ring-1 focus:ring-kumo-ring min-h-[36px] max-h-[100px]"
-							style={{ height: "auto", overflow: "hidden" }}
-							onInput={(e) => {
-								const field = e.target as HTMLTextAreaElement;
-								field.style.height = "auto";
-								field.style.height = `${Math.min(field.scrollHeight, 100)}px`;
-								field.style.overflow =
-									field.scrollHeight > 100 ? "auto" : "hidden";
-							}}
+							rows={tune ? 8 : 1}
+							aria-label={tune ? t("The prepared message: read and change it before you send it") : t("Chat message input")}
+							className="flex-1 resize-none rounded-lg border border-kumo-line bg-kumo-control px-3 py-2 text-xs text-kumo-default placeholder:text-kumo-subtle focus:outline-none focus:ring-1 focus:ring-kumo-ring min-h-[36px] leading-relaxed"
+							style={{ maxHeight: tune ? "50vh" : "100px", overflow: tune ? "auto" : "hidden" }}
 						/>
 						<Button
 							variant="primary"

@@ -350,12 +350,12 @@ test("round 2, K-2: an outside reply after Answer again, while the earlier card'
   // Meanwhile: Answer again (the run's draft is now d2), then a reply elsewhere retired both untouched drafts.
   const after = [row("m1", "received", { rfcMessageId: "<a@acme.example>" }, { draftId: d2, outcome: { kind: "answered_by_person", at: "" } })];
   const { gone } = retiredCards(shown, after, cardPlacement(after));
-  assert.deepEqual(gone, [{ answered: "x:m1", draftId: d1 }], "the notice gets the retired card's own draft id");
+  assert.deepEqual(gone, [{ answered: "x:m1", draftId: d1, kind: "retired" }], "the notice gets the retired card's own draft id");
   assert.deepEqual(retiredRedraftBody(readCardCopy(cardCopyKey(account, gone[0]!.draftId), storage)), { text: "My edit of the first answer" });
   assert.equal(readCardCopy(cardCopyKey(account, d2), storage), null, "the run's current draft id would read nothing (the round 2 defect)");
   const card2 = readFileSync("app/components/inbox/AgentDraftCard.tsx", "utf8");
   assert.match(card2, /const key = cardCopyKey\(accountId, draftId\);/, "the notice reads and clears by that id");
-  assert.match(readFileSync("app/routes/unified-inbox.tsx", "utf8"), /renderRetired=\{\(answered, draftId, close\) =>[\s\S]{0,200}draftId=\{draftId\}/);
+  assert.match(readFileSync("app/routes/unified-inbox.tsx", "utf8"), /renderRetired=\{\(answered, draftId, close, kind\) =>[\s\S]{0,200}draftId=\{draftId\}/);
   // A card sent as written, or a draft kept as the person's, is not a retirement.
   const approved = [row("m1", "received", {}, { draftId: d1, outcome: { kind: "approved_by_person", at: "" } })];
   assert.deepEqual(retiredCards(shown, approved, cardPlacement(approved)).gone, []);

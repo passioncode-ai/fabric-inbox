@@ -6,7 +6,7 @@ import { TRIAGE_GROUPS, type Triage, type TriageGroup } from "../../../shared/ma
 import { triageText } from "./triage-text";
 import { useT, type T } from "../../lib/i18n";
 import { agentRunLabel, agentRunNeedsLook } from "./agent-run";
-import { draftWaits } from "./draft-card";
+import { draftWaits, statusRepeatsDraft } from "./draft-card";
 import { replyStateLabel, replyStateOpen } from "./reply-state";
 import { interleave, showServer, type OtherRow } from "../../lib/other-servers";
 
@@ -109,13 +109,14 @@ function MessageRow({ message, account, selected, marked, onSelect, showGroup, c
       {/* B-178: kept from agents with tools until a person releases it. */}
       {message.held && <span className="fi-category-reason fi-spam-reason">{t("Held for review: {reason}", { reason: t.text(message.held.reason) })}</span>}
       {message.agentState ? (
-        // B-138: where the conversation stands; it says more than the agent's run on this one message.
+        // B-138: where the conversation stands; it says more than the agent's run on this one message. A-15: not when it
+        // only repeats "Draft waiting" beside the sender.
         <>
-          <span className={"fi-agent-tag" + (replyStateOpen(message.agentState) ? " needs-look" : "")}>{replyStateLabel(message.agentState, t)}</span>
+          {!statusRepeatsDraft(message) && <span className={"fi-agent-tag" + (replyStateOpen(message.agentState) ? " needs-look" : "")}>{replyStateLabel(message.agentState, t)}</span>}
           {/* B-170: still waiting for someone two days after it came in. */}
           {message.agentAbandoned && <span className="fi-agent-tag needs-look">{t("Abandoned")}</span>}
         </>
-      ) : message.agentRun && (
+      ) : message.agentRun && !statusRepeatsDraft(message) && (
         <span className={"fi-agent-tag" + (agentRunNeedsLook(message.agentRun.status) ? " needs-look" : "")}>{agentRunLabel(message.agentRun.status, t)}</span>
       )}
       <span className="fi-message-account">

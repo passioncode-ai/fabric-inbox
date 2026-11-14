@@ -8,7 +8,8 @@ import { listDate } from "./triage-view";
 import { agentRunLabel, agentRunNeedsLook } from "./agent-run";
 import { answeredRows, foldQuotedHtml, isNested, splitQuotedText, type QuoteLabels, type ThreadEvent } from "./quotes";
 import { addressOf, compactRecipients, headerFacts } from "./message-header";
-import { cardPlacement, retiredCards, type ShownCard } from "./draft-card";
+import { cardNeedsScroll, cardPlacement, cardToShow, retiredCards, type GoneCard, type ShownCard } from "./draft-card";
+import { useAgentName } from "./agent-name";
 
 /** Messages shown whole at once; earlier ones wait behind "Show earlier messages" (a long thread stays light). */
 const SHOWN = 25;
@@ -36,8 +37,8 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
   renderOpen: () => ReactNode;
   /** S06 (B-271): a reply agent's waiting draft as a card under the message it answers (`answered` absent: not in this thread). */
   renderCard?: (draft: ThreadRow, answered: ThreadRow | undefined) => ReactNode;
-  /** S07 (B-272): an open card whose draft was retired meanwhile, as a notice in its place. */
-  renderRetired?: (answered: ThreadRow, draftId: string, close: () => void) => ReactNode;
+  /** S07 (B-272): an open card whose draft was retired (or discarded, A-5) meanwhile, as a notice in its place. */
+  renderRetired?: (answered: ThreadRow, draftId: string, close: () => void, kind: GoneCard["kind"]) => ReactNode;
   /** S07: opens Drafts, from "Your edited draft is in Drafts". */
   onOpenDrafts?: () => void;
 }) {
@@ -67,22 +68,49 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
   }, [threadKey, unread.length]); // eslint-disable-line react-hooks/exhaustive-deps
   // S06: where each reply agent's draft is drawn: as a card under the message it answers.
   const placement = renderCard ? cardPlacement(rows) : null;
-  const firstCard = useRef<HTMLElement | null>(null);
-  // The open message comes into view: the conversation reads from the top, the reader lands on it; a waiting draft's
-  // card is then brought into view too (S06: seen at once).
+  const cardEls = useRef(new Map<string, HTMLElement>());
+  // The open message comes into view: the conversation reads from the top, the reader lands on it. Then the card that
+  // answers it (else the last waiting card) has its top in view (S06: seen at once; A-6): when the open message leaves
+  // it below the fold or above the pane, the card goes to the pane's top.
+  const cardRef = (id: string) => (el: HTMLElement | null) => { if (el) cardEls.current.set(id, el); else cardEls.current.delete(id); };
   const cardSeen = useRef("");
+  /** While a conversation just opened settles, its card is still placed (A-6): until when, and for which conversation. */
+  const cardWindow = useRef<{ thread: string; until: number } | null>(null);
+  const target = placement ? cardToShow(rows, placement, openId) : null;
+  const sectionRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    openRef.current?.scrollIntoView?.({ block: "start" });
     // Once per conversation opened, so moving within it never jumps back to the card.
-    if (firstCard.current?.isConnected && cardSeen.current !== threadKey) {
+    if (target && cardSeen.current !== threadKey) {
       cardSeen.current = threadKey;
-      firstCard.current.scrollIntoView?.({ block: "nearest" });
+      cardWindow.current = { thread: threadKey, until: Date.now() + SETTLE_MS };
     }
-  }, [openId, rows.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    const place = () => {
+      openRef.current?.scrollIntoView?.({ block: "start" });
+      const open = cardWindow.current;
+      const card = open && open.thread === threadKey && Date.now() < open.until && target ? cardEls.current.get(target) : undefined;
+      if (!card?.isConnected) return;
+      const pane = scrollPane(card);
+      const box = pane?.getBoundingClientRect?.();
+      if (!box || cardNeedsScroll(card.getBoundingClientRect().top, box)) card.scrollIntoView?.({ block: "start" });
+    };
+    place();
+    // A-6: the cells above load their bodies after this (each sizes itself to its mail), which moves the open message and
+    // its card down. While the conversation settles, it is placed again on every change of size, until the person
+    // scrolls, types or clicks, or for 2.5 s at most.
+    const section = sectionRef.current;
+    if (!section || typeof ResizeObserver === "undefined" || typeof window === "undefined") return;
+    const observer = new ResizeObserver(() => place());
+    observer.observe(section);
+    const done = () => { observer.disconnect(); clearTimeout(timer); for (const e of INTERACTIONS) window.removeEventListener(e, interact, true); };
+    const interact = () => { cardWindow.current = null; done(); };
+    const timer = setTimeout(done, SETTLE_MS);
+    for (const e of INTERACTIONS) window.addEventListener(e, interact, true);
+    return done;
+  }, [openId, rows.length, target]); // eslint-disable-line react-hooks/exhaustive-deps
   // S07: a card on screen whose draft a reply retired meanwhile turns into a notice instead of vanishing; the notice
   // knows the retired card's own draft id (round 2, K-2: "Answer again" moves the run's draft id on).
   const shownCards = useRef(new Map<string, ShownCard>());
-  const [retired, setRetired] = useState<ShownCard[]>([]);
+  const [retired, setRetired] = useState<GoneCard[]>([]);
   useEffect(() => { shownCards.current = new Map(); setRetired([]); }, [threadKey]);
   useEffect(() => {
     if (!placement) return;
@@ -96,7 +124,7 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
   const answered = answeredRows(rows.map((r) => ({ internalId: r.message.providerMessageId, rfcMessageId: r.rfcMessageId,
     inReplyTo: r.inReplyTo, references: r.references, draft: r.kind === "draft" })));
   return (
-    <section className="fi-thread" aria-label={t("Conversation")}>
+    <section ref={sectionRef} className="fi-thread" aria-label={t("Conversation")}>
       <div className="fi-thread-head">
         <h3 className="fi-thread-title">{t.plural(rows.length, { one: "{n} message in this thread", other: "{n} messages in this thread" })}</h3>
       </div>
@@ -146,11 +174,11 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
                 )}
                 {placement?.cards.has(index) ? <Clamp>{body}</Clamp> : body}
               </article>
-              {placement?.cards.get(index)?.map((draft, i) => (
-                <div key={draft.message.id} ref={(el) => { if (i === 0 && el) firstCard.current = el; }}>{renderCard!(draft, row)}</div>
+              {placement?.cards.get(index)?.map((draft) => (
+                <div key={draft.message.id} ref={cardRef(draft.message.id)}>{renderCard!(draft, row)}</div>
               ))}
               {retired.filter((card) => card.answered === row.message.id).map((card) => (
-                <div key={card.draftId}>{renderRetired?.(row, card.draftId, () => setRetired((list) => list.filter((x) => x.draftId !== card.draftId)))}</div>
+                <div key={card.draftId}>{renderRetired?.(row, card.draftId, () => setRetired((list) => list.filter((x) => x.draftId !== card.draftId)), card.kind)}</div>
               ))}
               {placement?.quiet.get(index)?.map((draft) => (
                 <p key={draft.message.id} className="fi-thread-event is-quiet">
@@ -167,9 +195,23 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
           );
         })}
       </ol>
-      {placement?.last.map((draft) => <div key={draft.message.id}>{renderCard!(draft, undefined)}</div>)}
+      {placement?.last.map((draft) => <div key={draft.message.id} ref={cardRef(draft.message.id)}>{renderCard!(draft, undefined)}</div>)}
     </section>
   );
+}
+
+/** How long an opened conversation is placed again as its cells load (A-6). */
+const SETTLE_MS = 2500;
+/** What the person does that ends the settling placement of an opened conversation (A-6). */
+const INTERACTIONS = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
+
+/** The nearest ancestor that scrolls (the reading pane), whose box says what of the card is in view. */
+function scrollPane(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const overflow = typeof getComputedStyle === "function" ? getComputedStyle(p).overflowY : "";
+    if ((overflow === "auto" || overflow === "scroll") && p.scrollHeight > p.clientHeight) return p;
+  }
+  return null;
 }
 
 /**
@@ -257,14 +299,16 @@ function whoSent(row: ThreadRow, t: ReturnType<typeof useT>): string {
 }
 
 /** The mark beside who sent it: the agent's answer or waiting reply, a draft, or what the agent did with a message that came in. */
-function WhoChip({ row }: { row: ThreadRow }) {
+export function WhoChip({ row }: { row: ThreadRow }) {
   const t = useT();
+  // S06, A-26: the agent by its name, as the card names it (its id when the name cannot be read).
+  const agent = useAgentName(row.sentBy === "agent" ? row.message.agentRun?.agentId : undefined);
   if (row.kind === "draft") return <span className="fi-thread-chip">{t("Draft")}</span>;
   // S06: the agent's own sent answer names its agent and version.
-  if (row.sentBy === "agent" && row.message.agentRun?.agentId)
-    return <span className="fi-thread-chip is-agent">{row.message.agentRun.agentVersion
-      ? t("Sent by {agent}, version {n}", { agent: row.message.agentRun.agentId, n: row.message.agentRun.agentVersion })
-      : t("Sent by {agent}", { agent: row.message.agentRun.agentId })}</span>;
+  if (row.sentBy === "agent" && agent)
+    return <span className="fi-thread-chip is-agent">{row.message.agentRun?.agentVersion
+      ? t("Sent by {agent}, version {n}", { agent, n: row.message.agentRun.agentVersion })
+      : t("Sent by {agent}", { agent })}</span>;
   if (row.sentBy === "agent") return <span className="fi-thread-chip is-agent">{t("Agent's answer")}</span>;
   if (row.sentBy === "agent_waiting") return <span className="fi-thread-chip is-agent">{t("Agent's waiting reply")}</span>;
   if (row.kind === "sent") return <span className="fi-thread-chip">{t("Sent by a person")}</span>;
