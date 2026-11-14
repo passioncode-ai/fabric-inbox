@@ -159,7 +159,7 @@ function ImapForm({ presetId, onBack, onConnected, onDirtyChange }: { presetId: 
             <label className="fi-field">{t("Sending server (SMTP)")}
               <input className="fi-input" required placeholder="smtp.example.com" autoComplete="off" spellCheck={false} value={server.smtpHost} onChange={(e) => setServer({ ...server, smtpHost: e.target.value })} />
             </label>
-            <label className="fi-field">{t("Security")}
+            <label className="fi-field">{t("[connection] Security")}
               <select className="fi-input" value={server.smtpSecurity}
                 onChange={(e) => { const v = e.target.value as "tls" | "starttls"; setServer({ ...server, smtpSecurity: v, smtpPort: v === "starttls" ? "587" : "465" }); }}>
                 <option value="tls">{t("SSL/TLS (port 465)")}</option>

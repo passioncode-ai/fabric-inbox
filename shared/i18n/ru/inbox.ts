@@ -3,7 +3,7 @@ export const INBOX: Readonly<Record<string, string>> = {
 	// The inbox page (app/routes/unified-inbox.tsx)
 	"All inboxes · Fabric Inbox": "Все входящие · Fabric Inbox",
 	// B-244 (app/components/inbox/ServerTabs.tsx, TriagedList.tsx): the servers the desktop app holds, in one inbox.
-	"Not reachable now": "Сейчас не отвечает",
+	"Not reachable now": "Сейчас недоступен",
 	"Opens on {server}": "Откроется на сервере {server}",
 	"Other servers": "Другие серверы",
 	"Starred": "Со звёздочкой",

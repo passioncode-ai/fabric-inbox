@@ -70,7 +70,9 @@
 .fi-section-head h1 { margin: 0; font-size: var(--pc-type-section); font-weight: 650; letter-spacing: -0.3px; }
 .fi-section-head > p { margin: 4px 0 0; color: var(--pc-text-muted); font-size: 12px; }
 .fi-section-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
-.fi-section-tools .fi-list-search { flex: 1 1 120px; min-width: 0; }
+/* A-33: room for the placeholder (1ch a character, plus padding and the clear button) before the
+   button may share the line; with less, the button wraps below and the field takes the row. */
+.fi-section-tools .fi-list-search { flex: 1 1 calc(var(--fi-search-chars, 12) * 1ch + 44px); min-width: 0; }
 .fi-section-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .fi-section-foot { border-top: 1px solid var(--pc-border); padding: 10px 18px; font-size: 12px; color: var(--pc-text-muted); }
 .fi-section-foot:empty { display: none; }

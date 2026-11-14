@@ -4,7 +4,7 @@ import { useKumoToastManager } from "@cloudflare/kumo";
 import { CaretLeftIcon, DotsThreeIcon, XIcon } from "@phosphor-icons/react";
 import {
   createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState,
-  type KeyboardEvent, type ReactNode, type RefObject,
+  type CSSProperties, type KeyboardEvent, type ReactNode, type RefObject,
 } from "react";
 import { Link, useBlocker, useNavigate } from "react-router";
 import { useT } from "../../lib/i18n";
@@ -433,8 +433,11 @@ export function SelectableList<T extends ListEntry>({ label, groups, selected, h
 
 /** The search above a list. It never moves the list: it only filters it. */
 export function ListSearch({ value, onChange, placeholder, label }: { value: string; onChange: (v: string) => void; placeholder: string; label: string }) {
+  // A-33: the field asks for room for its whole placeholder (in this language); a toolbar that has
+  // less puts its button on the next line instead of cutting the words ("Find an accour").
   return (
     <input className="fi-list-search" type="search" value={value} placeholder={placeholder} aria-label={label}
+      style={{ "--fi-search-chars": [...placeholder].length } as CSSProperties}
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={(e) => { if (e.key === "Escape" && value) { e.preventDefault(); e.stopPropagation(); onChange(""); } }} />
   );
