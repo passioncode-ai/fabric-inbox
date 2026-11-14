@@ -93,7 +93,7 @@ export default function MCPPanel() {
 						</div>
 					</div>
 					<p className="text-xs text-kumo-subtle leading-relaxed">
-						{t("This email agent exposes an MCP server so AI coding assistants can manage your inbox directly — read emails, search, draft replies, and send messages using natural language.")}
+						{t("This email agent exposes an MCP server so AI coding assistants can manage your inbox directly: read emails, search, draft replies, and send messages using natural language.")}
 					</p>
 				</div>
 

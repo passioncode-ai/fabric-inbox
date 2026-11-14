@@ -16,7 +16,7 @@ export const COMMON: Readonly<Record<string, string>> = {
 	"Page not found": "Страница не найдена",
 	"The page you're looking for doesn't exist or has been moved.": "Такой страницы нет — возможно, её перенесли.",
 	"Error {status}": "Ошибка {status}",
-	"404 — Page not found": "404 — страница не найдена",
+	"404: Page not found": "404: страница не найдена",
 	"Go Home": "На главную",
 
 	// Words every screen uses
@@ -113,7 +113,7 @@ export const COMMON: Readonly<Record<string, string>> = {
 	"Drafts you are writing live on this device; an uninstaller that removes this app's data loses them.": "Черновики хранятся на этом устройстве: если удалить приложение вместе с его данными, они пропадут.",
 	"Domains in its configuration": "Домены в его конфигурации",
 	"unknown ({error})": "неизвестно ({error})",
-	"none — domains are chosen on Domains": "нет — домены выбираются в разделе «Домены»",
+	"none (domains are chosen on Domains)": "нет (домены выбираются в разделе «Домены»)",
 	"To open another server, choose Fabric Inbox → Server address… in the menu bar.": "Чтобы открыть другой сервер, выберите в строке меню Fabric Inbox → «Адрес сервера…».",
 	"The Mac app chooses its server under Fabric Inbox → Server address….": "Приложение для Mac выбирает сервер в меню Fabric Inbox → «Адрес сервера…».",
 	"These switches belong to this Mac, so they live in the app menu (Fabric Inbox in the menu bar):": "Эти переключатели относятся к этому Mac, поэтому они в меню приложения (Fabric Inbox в строке меню):",

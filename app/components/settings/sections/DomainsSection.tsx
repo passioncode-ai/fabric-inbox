@@ -348,7 +348,7 @@ function ServedDomain({ summary, list, data, action }: {
             <span className="fi-hint">{t("Chosen, then applied: it changes Cloudflare's catch-all for {domain}.", { domain })}</span>
             <select className="fi-input" value={choice ?? catchAll ?? ""} disabled={!!catchWork.busy || catchAllFixed || !connected}
               onChange={(e) => setChoice(e.target.value)}>
-              <option value="">{t("Refuse it — the sender is told")}</option>
+              <option value="">{t("Refuse it: the sender is told")}</option>
               {addresses.map((a) => <option key={a.email} value={a.email}>{t("Keep it in {email}", { email: a.email })}</option>)}
             </select>
           </label>
@@ -375,12 +375,12 @@ function ServedDomain({ summary, list, data, action }: {
               <li key={u.address}>
                 <span className="fi-grow">{u.action === "rejected"
                   ? t.plural(u.count, {
-                    one: "{address} — {n} message refused, last {when}",
-                    other: "{address} — {n} messages refused, last {when}",
+                    one: "{address}: {n} message refused, last {when}",
+                    other: "{address}: {n} messages refused, last {when}",
                   }, { address: u.address, when: t.dateTime(u.lastSeen) })
                   : t.plural(u.count, {
-                    one: "{address} — {n} message kept in the catch-all, last {when}",
-                    other: "{address} — {n} messages kept in the catch-all, last {when}",
+                    one: "{address}: {n} message kept in the catch-all, last {when}",
+                    other: "{address}: {n} messages kept in the catch-all, last {when}",
                   }, { address: u.address, when: t.dateTime(u.lastSeen) })}</span>
                 <Link className="fi-text-button" to={settingsPath("addresses", null, null, { add: "1", domain, name: u.address.slice(0, u.address.lastIndexOf("@")) })}>{t("Add this address")}</Link>
               </li>

@@ -267,7 +267,7 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
   return (
     <Panel title={a.email} closeTo={settingsPath("addresses")}
       subtitle={entry.orphan
-        ? t("On {domain} — this domain no longer receives here, so new mail is refused", { domain: a.domain })
+        ? t("On {domain}: this domain no longer receives here, so new mail is refused", { domain: a.domain })
         : t("On {domain}", { domain: a.domain })}
       badges={<>
         {routing.data && <RoutingBadge state={routing.data.state} />}
@@ -290,11 +290,11 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
           <span className="fi-hint">{t("An agent answers new mail within its reply policy; Off keeps the mail for you.")}</span>
           <select className="fi-input" aria-label={t("Who answers")} value={current} disabled={!!work.busy} onChange={(e) => setAnswerer(e.target.value)}>
             {current === "legacy" && <option value="legacy" disabled>{t("Drafts with its old prompt (set on next message)")}</option>}
-            <option value="off">{t("Off — I read it myself")}</option>
+            <option value="off">{t("Off: I read it myself")}</option>
             {agents?.agents.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
             {/* Agents that could not be listed still show the one answering, never a false "Off". */}
             {typeof a.agent === "object" && !agents && <option value={a.agent.id}>{a.agentName ?? a.agent.id}</option>}
-            {typeof a.agent === "object" && agents && !a.agentName && <option value={a.agent.id} disabled>{t("Deleted agent — Off")}</option>}
+            {typeof a.agent === "object" && agents && !a.agentName && <option value={a.agent.id} disabled>{t("Deleted agent (Off)")}</option>}
           </select>
           {chosen && <span className="fi-hint">{agentLine(chosen, t)}</span>}
         </label>

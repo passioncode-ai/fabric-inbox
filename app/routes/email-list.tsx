@@ -449,7 +449,7 @@ export default function EmailListRoute() {
 												</span>
 											{snippet && (
 												<span className="text-kumo-subtle font-normal">
-													{" "}— {snippet}
+													{" "}· {snippet}
 												</span>
 											)}
 										</div>

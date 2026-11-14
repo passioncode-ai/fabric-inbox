@@ -33,7 +33,7 @@ export function AccountAgent({ account: a, provider }: { account: Account; provi
         <label className="fi-field">
           <span className="fi-hint">{t("An agent answers new mail in this account's inbox within its reply policy, from the account itself; Off keeps the mail for you.")}</span>
           <select className="fi-input" aria-label={t("Who answers")} value={current} disabled={!!work.busy || agents.isPending} onChange={(e) => choose(e.target.value)}>
-            <option value="off">{t("Off — I read it myself")}</option>
+            <option value="off">{t("Off: I read it myself")}</option>
             {agents.data?.agents.map((x) => {
               const blocked = x.replyPolicy.mode === "draft" && !drafts;
               return <option key={x.id} value={x.id} disabled={blocked}>{blocked ? t("{agent} (drafts; this account keeps no drafts)", { agent: x.name }) : x.name}</option>;

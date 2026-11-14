@@ -11,7 +11,7 @@ import { englishT, type T } from "../../../../shared/i18n";
 export function stepsSummary(domain: string, steps: readonly Step[], t: T = englishT): string {
   const failed = steps.find((s) => s.outcome === "failed");
   if (failed) {
-    return t("{domain}: not finished — {step}. {detail} Running it again continues from there.",
+    return t("{domain}: not finished ({step}). {detail} Running it again continues from there.",
       { domain, step: t.text(failed.label), detail: t.text(failed.detail) });
   }
   if (!steps.length) return t("{domain}: nothing to do.", { domain });

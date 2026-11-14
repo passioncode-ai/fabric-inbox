@@ -112,7 +112,7 @@ function ServerPanel() {
         <p className="fi-hint">{t("Drafts you are writing live on this device; an uninstaller that removes this app's data loses them.")}</p>
         <ul className="fi-facts">
           <li><strong>{t("Address")}</strong> <code>{origin || "…"}</code></li>
-          <li><strong>{t("Domains in its configuration")}</strong> {config.isPending ? "…" : config.isError ? t("unknown ({error})", { error: t.text(errorText(config.error)) }) : config.data.domains.length ? t.list(config.data.domains) : t("none — domains are chosen on Domains")}</li>
+          <li><strong>{t("Domains in its configuration")}</strong> {config.isPending ? "…" : config.isError ? t("unknown ({error})", { error: t.text(errorText(config.error)) }) : config.data.domains.length ? t.list(config.data.domains) : t("none (domains are chosen on Domains)")}</li>
         </ul>
         <p className="fi-hint">{desktop
           ? t("To open another server, choose Fabric Inbox → Server address… in the menu bar.")
@@ -248,7 +248,7 @@ function SetupPanel() {
           {setup.notServed.length > 0 && (
             <>
               <h3 style={{ marginTop: 12 }}>{t("Stays as it is")}</h3>
-              <ul className="fi-hint">{setup.notServed.map((n) => <li key={n.domain}><strong>{n.domain}</strong> — {t.text(n.reason)}</li>)}</ul>
+              <ul className="fi-hint">{setup.notServed.map((n) => <li key={n.domain}><strong>{n.domain}</strong>: {t.text(n.reason)}</li>)}</ul>
             </>
           )}
           <div className="fi-buttons">

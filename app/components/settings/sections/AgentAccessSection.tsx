@@ -232,7 +232,7 @@ function KeyPanel({ agentKey: k, mcpUrl, onRevoked }: { agentKey: AgentKey; mcpU
         { label: t("Revoke…"), danger: true, onSelect: () => void revoke() }]} />}>
       <PanelBlock>
         <ul className="fi-facts">
-          <li><strong>{t("Level")}</strong> {levelTitle(k.level, t)} — {levels(t).find((l) => l.id === k.level)?.hint}</li>
+          <li><strong>{t("Level")}</strong> {levelTitle(k.level, t)}: {levels(t).find((l) => l.id === k.level)?.hint}</li>
           <li><strong>{t("Sending")}</strong> {sendingText(k, t)}</li>
           <li><strong>{t("Mailboxes")}</strong> {scopeText(k, t)}</li>
           <li><strong>{t("What cannot be undone")}</strong> {approvalText(k, t)}</li>
@@ -382,7 +382,7 @@ export function NewKeyDialog({ open, onClose, onDone }: { open: boolean; onClose
             {levels(t).map((l) => (
               <label key={l.id} className="fi-check">
                 <input type="radio" name="level" checked={form.level === l.id} onChange={() => setForm({ ...form, level: l.id })} />
-                <span><strong>{l.title}</strong> — {l.hint}</span>
+                <span><strong>{l.title}</strong>: {l.hint}</span>
               </label>
             ))}
           </fieldset>
@@ -396,9 +396,9 @@ export function NewKeyDialog({ open, onClose, onDone }: { open: boolean; onClose
             <fieldset>
               <legend>{t("Sending")}</legend>
               <label className="fi-check"><input type="radio" name="send" checked={form.send === "drafts"} onChange={() => setForm({ ...form, send: "drafts" })} />
-                <span><strong>{t("Drafts only")}</strong> — {t("the agent writes drafts; you send them.")}</span></label>
+                <span><strong>{t("Drafts only")}</strong>: {t("the agent writes drafts; you send them.")}</span></label>
               <label className="fi-check"><input type="radio" name="send" checked={form.send === "send"} onChange={() => setForm({ ...form, send: "send" })} />
-                <span><strong>{t("Can send")}</strong> — {t.rich("up to {limit} messages a day.", {
+                <span><strong>{t("Can send")}</strong>: {t.rich("up to {limit} messages a day.", {
                   limit: <input key="limit" type="number" min={1} max={KEY_DAILY_SENDS.max} className="fi-input" style={{ width: 80, display: "inline-block" }} aria-label={t("Messages a day")}
                     value={form.dailySendLimit} onChange={(e) => setForm({ ...form, dailySendLimit: limit(e.target.value) })} />,
                 })}</span></label>
@@ -408,9 +408,9 @@ export function NewKeyDialog({ open, onClose, onDone }: { open: boolean; onClose
             <fieldset>
               <legend>{t("Mailboxes")}</legend>
               <label className="fi-check"><input type="radio" name="limited" checked={!form.limited} onChange={() => setForm({ ...form, limited: false })} />
-                <span><strong>{t("All mailboxes")}</strong> — {t("and what the whole workspace shares at this level.")}</span></label>
+                <span><strong>{t("All mailboxes")}</strong>: {t("and what the whole workspace shares at this level.")}</span></label>
               <label className="fi-check"><input type="radio" name="limited" checked={form.limited} onChange={() => setForm({ ...form, limited: true })} />
-                <span><strong>{t("Only these mailboxes")}</strong> — {t("the agent sees and changes nothing else, not even settings.")}</span></label>
+                <span><strong>{t("Only these mailboxes")}</strong>: {t("the agent sees and changes nothing else, not even settings.")}</span></label>
               {form.limited && (
                 <div style={{ marginLeft: 24 }}>
                   {mailboxes.isPending && <p role="status" className="fi-hint">{t("Loading mailboxes…")}</p>}
