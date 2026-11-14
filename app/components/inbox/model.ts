@@ -1,6 +1,6 @@
 import type { Email } from "~/types";
 import type { Mail } from "~/services/fabric";
-import { displaySender } from "../../../shared/mail/sender";
+import { displaySender, storedHeader } from "../../../shared/mail/sender";
 import type { Triage } from "../../../shared/mail/triage";
 import { rewriteInlineImages, type InlineAttachments } from "../../lib/mail-image-policy";
 import { bareContentId, inlinePictureType } from "../../../shared/mail/inline";
@@ -88,6 +88,14 @@ export type OpenMessage = {
   from: string;
   to: string;
   cc?: string;
+  /** S02: the Bcc of mail we sent (received mail does not carry it). */
+  bcc?: string;
+  /** S02: Reply-To as written, when the message has one. */
+  replyTo?: string;
+  /** S02: the List-Id; null when the message has none, undefined when its headers were not read. */
+  listId?: string | null;
+  /** S02: mail we sent, or a draft. */
+  sent?: boolean;
   date: string;
   text?: string;
   html?: string;
@@ -123,12 +131,15 @@ export function normalizeMessage(
 ): OpenMessage {
   if (isRemote(provider)) {
     // The server sends cc (absent on messages cached before 2026-10-05); the Mail type predates it.
-    const m = value as Mail & { cc?: string };
+    const m = value as Mail & { cc?: string; bcc?: string; replyTo?: string };
     return {
       subject: m.subject,
       from: m.from,
       to: m.to,
       cc: m.cc,
+      ...(m.bcc ? { bcc: m.bcc } : {}),
+      ...(m.replyTo ? { replyTo: m.replyTo } : {}),
+      sent: (m.labels ?? []).some((l) => l === "SENT" || l === "DRAFT"),
       date: m.date,
       text: m.text,
       html: m.html,
@@ -152,6 +163,10 @@ export function normalizeMessage(
     from: displaySender(m.sender, m.sender_name, m.raw_headers),
     to: m.recipient,
     cc: m.cc ?? undefined,
+    ...(m.bcc ? { bcc: m.bcc } : {}),
+    ...(storedHeader(m.raw_headers, "reply-to") ? { replyTo: storedHeader(m.raw_headers, "reply-to") as string } : {}),
+    listId: storedHeader(m.raw_headers, "list-id"),
+    sent: m.folder_id === "sent" || m.folder_id === "draft",
     date: m.date,
     html: m.body ?? undefined,
     read: m.read,

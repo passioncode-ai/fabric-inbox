@@ -330,13 +330,13 @@ test("AUD-B11-12: the run card offers Check status only for an uncertain run who
   assert.equal(runCheckable({ ...tool, proposal: { action: { type: "archive" }, emailDigest: "d" } } as Parameters<typeof runCheckable>[0]), true);
 });
 
-/** The Rules and history screen rendered with the server's answers already in the cache. */
+/** The Rules screen's History tab (S10) rendered with the server's answers already in the cache. */
 function renderRuns(account: string, runs: unknown[]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   client.setQueryData(["rules", account], []);
   client.setQueryData(["runs", account], runs);
   const router = createMemoryRouter([{ path: "/automation/:account", element: createElement(Automation) }], {
-    initialEntries: ["/automation/" + encodeURIComponent(account)],
+    initialEntries: ["/automation/" + encodeURIComponent(account) + "?tab=history"],
   });
   return renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(RouterProvider, { router })));
 }

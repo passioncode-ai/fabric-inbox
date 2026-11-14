@@ -112,13 +112,12 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"Back to messages": "Назад к письмам",
 	"Archive message": "Архивировать письмо",
 	"Message could not load": "Не удалось загрузить письмо",
-	"To {to}": "Кому: {to}",
-	"Cc {cc}": "Копия: {cc}",
 	"No message body.": "В письме нет текста.",
 	"Attachments": "Вложения",
 	"Downloading…": "Скачиваем…",
 	"Reply all": "Ответить всем",
 	"Rules for this account": "Правила для этого аккаунта",
+	"Rules for this address": "Правила для этого адреса",
 	"Accepted by the email provider. Recipient delivery is not confirmed.": "Почтовый провайдер принял письмо. Доставка получателю не подтверждена.",
 	"Close rules chooser": "Закрыть выбор правил",
 	"Choose the account whose mail the rule can act on.": "Выберите аккаунт, с почтой которого будет работать правило.",
@@ -372,4 +371,13 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"Keep held": "Оставить задержанным",
 	"Held for review: {reason}": "Задержано для проверки: {reason}",
 	"You can only read this mailbox. Ask an administrator for Read and send.": "Этот ящик вам доступен только для чтения. Попросите администратора дать уровень «Чтение и отправка».",
+	// S02 (B-268): who wrote the open message and to whom.
+	"Reply to": "Ответ на адрес",
+	"you": "вы",
+	"Your address is not in To or Cc": "Вашего адреса нет в «Кому» и «Копия»",
+	"and {n} more": "и ещё {n}",
+	"Copy {address}": "Скопировать {address}",
+	"Received at": "Получено на",
+	// S01 (B-267)
+	"All groups": "Все группы",
 };

@@ -9,6 +9,7 @@ import type { AgentList, ProjectAddress, ProjectAddresses, RoutingStatus, TestSt
 import type { DomainList } from "~/services/domains";
 import { groupRows, stableGroup, visibleRows, type ListEntry } from "../list-model";
 import { settingsPath } from "../paths";
+import { useSettingsServers } from "../servers-context";
 import {
   ActionMenu, ActionResult, Badge, Dialog, ListSearch, LoadFailure, Panel, PanelBlock, PanelPlaceholder, PanelTabs,
   SectionLayout, SelectableList, SkeletonPanel, SkeletonRows, errorText, useConfirm, useNotify, useWork,
@@ -78,7 +79,10 @@ export default function AddressesSection({ id, tab }: { id: string | null; tab: 
 
   const adding = params.get("add") === "1";
   const closeAdd = () => setParams((p) => { const n = new URLSearchParams(p); n.delete("add"); n.delete("domain"); n.delete("name"); return n; }, { replace: true, preventScrollReset: true });
-  const openAdd = () => setParams((p) => { const n = new URLSearchParams(p); n.set("add", "1"); return n; }, { replace: true, preventScrollReset: true });
+  const openHere = () => setParams((p) => { const n = new URLSearchParams(p); n.set("add", "1"); return n; }, { replace: true, preventScrollReset: true });
+  // S11 (B-276): under All, adding asks which server first; another server opens its own add dialog there.
+  const servers = useSettingsServers();
+  const openAdd = () => { void (async () => { if (!servers || await servers.askAdd(settingsPath("addresses", null, null, { add: "1" }))) openHere(); })(); };
   // An address can be added on a domain receiving here, or (with a token) on any domain that can.
   const canAdd = domainOptions(domains.data).length > 0;
 
@@ -119,7 +123,7 @@ export default function AddressesSection({ id, tab }: { id: string | null; tab: 
 
   return (
     <>
-      <SectionLayout section="addresses" hasSelection={!!id}
+      <SectionLayout section="addresses" hasSelection={!!id} ownCount={loading || failed ? null : all.length}
         toolbar={<>
           <ListSearch value={query} onChange={setQuery} placeholder={t("Find an address")} label={t("Find an address")} />
           <button type="button" className="fi-primary" onClick={openAdd} disabled={loading || !canAdd}
@@ -210,7 +214,7 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
     { id: "routing", label: t("Routing & test") },
     { id: "copy", label: t("[tab] Copy") },
     { id: "signature", label: t("Name & signature") },
-    { id: "rules", label: t("Rules & history") },
+    { id: "rules", label: t("Rules") },
   ];
 
   const setAnswerer = (value: string) => void work.run(t("Saving…"), async () => {
@@ -250,7 +254,7 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
   const remove = async () => {
     const ok = await confirm({
       title: t("Remove {email} and delete its mail?", { email: a.email }),
-      body: <p>{t("Its routing rule in Cloudflare is removed too. This cannot be undone.")}</p>,
+      body: <p>{t("Its forwarding in Cloudflare is removed too. This cannot be undone.")}</p>,
       confirmLabel: t("Remove and delete mail"), danger: true,
       blocked: catchAll ? t("{email} keeps the mail for every other address on {domain}. Choose another catch-all on Domains first.", { email: a.email, domain: a.domain }) : undefined,
     });
@@ -307,8 +311,8 @@ function AddressPanel({ entry, tab, agents, list, data, unread, onRemoved }: {
       {tab === "signature" && <SignatureForm email={a.email} />}
       {tab === "rules" && (
         <PanelBlock>
-          <p>{t("Rules act on new mail to {email}: they can archive, label, forward or call a tool, after approval or by themselves. Every run is kept with what it did.", { email: a.email })}</p>
-          <Link className="fi-secondary" to={"/automation/" + encodeURIComponent(a.email)}>{t("Open rules and history")}</Link>
+          <p>{t("Rules act on new mail to {email}: they can archive, mark as read, prepare a reply draft, forward or call a tool, after approval or by themselves. Every run is kept with what it did.", { email: a.email })}</p>
+          <Link className="fi-secondary" to={"/automation/" + encodeURIComponent(a.email)}>{t("Rules")}</Link>
         </PanelBlock>
       )}
       <ActionResult result={pauseWork.result} />

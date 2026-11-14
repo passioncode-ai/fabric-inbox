@@ -38,3 +38,27 @@ test("what the bridge answers is kept to well-formed servers and rows; a link th
   assert.deepEqual(inbox.messages.map((m) => m.at), [5]);
   assert.deepEqual(readOtherInbox(undefined), { servers: [], messages: [] });
 });
+
+// S11 (B-276): the settings read is its own optional method; an older desktop build without it keeps the mail switch.
+import { consoleRunning, otherSettingsBridge, serversBridge } from "../app/lib/other-servers";
+
+test("an older bridge without otherSettings keeps the mail switch; Settings show one server", async () => {
+	const g = globalThis as unknown as { window?: unknown };
+	const before = g.window;
+	const base = { servers: async () => [], otherInbox: async () => ({}), showServer: async () => true };
+	try {
+		g.window = { fabricDesktop: base };
+		assert.ok(serversBridge(), "the mail switch stays");
+		assert.equal(otherSettingsBridge(), null, "no settings read");
+		assert.equal(await consoleRunning(), false, "unknown reads as not running");
+		const asked: string[] = [];
+		g.window = { fabricDesktop: { ...base, otherSettings: async (kind: string) => { asked.push(kind); return { kind, servers: [] }; }, consoleRunning: async () => true } };
+		await otherSettingsBridge()!("accounts");
+		assert.deepEqual(asked, ["accounts"]);
+		assert.equal(await consoleRunning(), true);
+		g.window = { fabricDesktop: { otherSettings: async () => ({}) } };
+		assert.equal(otherSettingsBridge(), null, "without the servers bridge there is no settings read either");
+	} finally {
+		g.window = before;
+	}
+});

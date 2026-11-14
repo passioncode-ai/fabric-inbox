@@ -409,6 +409,8 @@ function installMoveIPC() {
 // ── B-233, B-244 (SCN-099): the mail of every server the app holds, read through each one's own session ─────
 // The merged list lives in the mail window (B-244 D-3); `readAll` reads the other servers for its bridge.
 const allServers = require('./all-servers.cjs');
+// S11 (B-276): Settings → Accounts, Addresses and Domains under All read the other servers the same way.
+const otherSettings = require('./other-settings.cjs');
 
 // ── B-244 D-4 (SCN-099): a server's name is the person's, kept in servers.json on this Mac ─────────────────────
 let renameWindow = null;
@@ -487,6 +489,18 @@ function installServersBridgeIPC() {
     logEvent({ event: 'other_inbox_read', servers: result.servers.length, ok: result.servers.filter((s) => s.state === 'ok').length });
     return result;
   });
+  // S11 (B-276): the other servers' accounts, addresses or domains, each read through its own session, on the page's
+  // open of the list and its Retry (no timer); 401 and 403 read as signed out.
+  ipcMain.handle('fabric:other-settings', async (event, kind) => {
+    const self = from(event);
+    if (!otherSettings.KINDS.includes(kind)) return null;
+    const others = servers.filter((s) => s.origin !== self).map((s) => ({ origin: s.origin, label: serverList.labelFor(s, t) }));
+    const result = await otherSettings.readSettings({ servers: others, kind, read: (origin, pathname) => serverApi(origin).get(pathname) });
+    logEvent({ event: 'other_settings_read', kind, servers: result.servers.length, ok: result.servers.filter((s) => s.state === 'ok').length });
+    return result;
+  });
+  // S11: whether an agent console session runs, so the page says before a switch of server that it will stop (switchServer).
+  ipcMain.handle('fabric:console-running', (event) => { from(event); return !!(agentConsole && agentConsole.running()); });
   // Shows a held server in this window, at one of its paths when given (a message link); false when refused.
   ipcMain.handle('fabric:show-server', async (event, origin, link) => {
     from(event);

@@ -45,3 +45,10 @@ test("a row it cannot open is left out, and an answer that is not an inbox reads
   const out = await readAll({ servers: [A], read: async () => ({ status: 200, body: { messages: [{ subject: "no id" }, msg("a1", 5)] } }) });
   assert.deepEqual(out.messages.map((m: any) => m.subject), ["s-a1"]);
 });
+
+test("S01 (B-267): a read that came back with a full page says so, so its unread count shows as a lower bound", async () => {
+  const page = Array.from({ length: 50 }, (_, i) => msg(`f${i}`, i));
+  const read = async (origin: string) => origin === A.origin ? { status: 200, body: { messages: page } } : { status: 200, body: { messages: [msg("b1", 1)] } };
+  const out = await readAll({ servers: [A, B], read });
+  assert.deepEqual(out.servers.map((s: any) => [s.label, s.full]), [["My space", true], ["Acme", false]]);
+});

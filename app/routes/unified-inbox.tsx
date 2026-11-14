@@ -59,6 +59,7 @@ import ConversationList from "~/components/inbox/ConversationList";
 import { loadConversation, markRead, messageBody, type ThreadRow } from "~/components/inbox/thread";
 import AgentRunPanel from "~/components/inbox/AgentRunPanel";
 import HeldPanel from "~/components/inbox/HeldPanel";
+import MessageHeader from "~/components/inbox/MessageHeader";
 import { openFromLink } from "~/components/inbox/open-link";
 import { untouchedDraft } from "~/components/inbox/draft-store";
 import DraftsDialog, { draftRows } from "~/components/inbox/DraftsDialog";
@@ -1086,7 +1087,7 @@ export default function UnifiedInbox() {
             <>
               <button className="fi-nav-item" onClick={() => setRulesOpen(true)}>
                 <SparkleIcon size={19} />
-                <span>{t("Rules & history")}</span>
+                <span>{t("Rules")}</span>
                 <CaretRightIcon size={14} />
               </button>
               <Link className="fi-nav-item" to="/settings">
@@ -1304,16 +1305,16 @@ export default function UnifiedInbox() {
                   ? t("Search results")
                   : t.text(folders.find((f) => f[0] === folder)?.[1] ?? "")}
               </strong>
-              <span>
-                {marked.size > 1 ? TT.selected(marked.size) : t(view === "focus" ? "Important first" : "Newest first")}
-              </span>
+              {marked.size > 1 ? <span>{TT.selected(marked.size)}</span>
+                : serverTabs ? (
+                  // S01 (B-267): the server switch sits in the heading; the order hint stays on the Focus/Newest control.
+                  <ServerTabs servers={heldServers} states={otherInbox.data?.servers ?? []} mergeAll={mergeAll}
+                    ownUnread={totalUnread(accounts) ?? 0} onChoose={chooseServerTab} onRetry={() => void otherInbox.refetch()} />
+                ) : <span>{t(view === "focus" ? "Important first" : "Newest first")}</span>}
             </div>
-            {serverTabs && (
-              <ServerTabs servers={heldServers} states={otherInbox.data?.servers ?? []} mergeAll={mergeAll}
-                ownUnread={totalUnread(accounts) ?? 0} onChoose={chooseServerTab} onRetry={() => void otherInbox.refetch()} />
-            )}
             <div className="fi-filter-bar" role="toolbar" aria-label={t("List view and filters")}>
-              {folder !== "spam" && <div className="fi-segmented" role="group" aria-label={t("Order")}>
+              {folder !== "spam" && <div className="fi-segmented" role="group" aria-label={t("Order")}
+                title={t(view === "focus" ? "Important first" : "Newest first")}>
                 <button type="button" aria-pressed={view === "focus"} onClick={() => scope({ view: "focus" })}>
                   {t("Focus")}
                 </button>
@@ -1335,7 +1336,7 @@ export default function UnifiedInbox() {
               {folder !== "spam" && (counts.length > 1 || !!group) && (
                 <div className="fi-chip-row" role="group" aria-label={t("Show one group")}>
                   <button type="button" className="fi-chip" aria-pressed={!group} onClick={() => scope({ group: "" })}>
-                    {t("All")}
+                    {t("All groups")}
                   </button>
                   {counts.map((c) => (
                     <button
@@ -1607,9 +1608,6 @@ export default function UnifiedInbox() {
                             {selected.provider === "cloudflare"
                               ? "CLOUDFLARE"
                               : (owner?.providerName ?? (selected.provider === "gmail" ? "Gmail" : "IMAP")).toUpperCase()}
-                            <span className="fi-account-pill">
-                              {owner?.email ?? rawAccount(selected.accountId)}
-                            </span>
                           </span>
                           <h2>{detail.data.subject || t("(No subject)")}</h2>
                           {selected.discardReason && (
@@ -1618,23 +1616,10 @@ export default function UnifiedInbox() {
                               {restoredRules.length === 0 && <Link to={settingsPath("discard")}>{TT.bannerLink}</Link>}
                             </p>
                           )}
-                          {!threaded && (
-                          <div className="fi-sender">
-                            <span className="fi-avatar">
-                              {senderName(detail.data.from)
-                                .charAt(0)
-                                .toUpperCase()}
-                            </span>
-                            <div>
-                              <strong>{detail.data.from}</strong>
-                              <p>{t("To {to}", { to: detail.data.to })}</p>
-                              {detail.data.cc ? <p>{t("Cc {cc}", { cc: detail.data.cc })}</p> : null}
-                            </div>
-                            <time dateTime={detail.data.date}>
-                              {listDate(detail.data.date, undefined, t)}
-                            </time>
-                          </div>
-                          )}
+                          <MessageHeader message={detail.data} own={owner?.email ?? rawAccount(selected.accountId)} catchAll={owner?.catchAll}
+                            provider={selected.provider === "cloudflare" ? "Cloudflare" : (owner?.providerName ?? (selected.provider === "gmail" ? "Gmail" : "IMAP"))}
+                            headersPath={isRemote(selected.provider) ? `${messagePath(selected)}/headers` : undefined}
+                            fetchJson={(url) => fabric(url)} />
                         </header>
                         {threaded ? (
                           <ConversationList rows={conversation.data ?? []} openId={selected.providerMessageId}
@@ -1668,8 +1653,8 @@ export default function UnifiedInbox() {
                         </button>
                         </>)}
                         {owner && (
-                          <Link to={rulesPath(owner)} className="fi-rule-link">
-                            <SparkleIcon size={17} /> {t("Rules for this account")}
+                          <Link to={rulesPath(owner)} state={{ from: "mail" }} className="fi-rule-link">
+                            <SparkleIcon size={17} /> {owner.provider === "cloudflare" ? t("Rules for this address") : t("Rules for this account")}
                           </Link>
                         )}
                       </footer>
@@ -1766,7 +1751,7 @@ export default function UnifiedInbox() {
         aria-labelledby="rules-title"
       >
         <header>
-          <h2 id="rules-title">{t("Rules & history")}</h2>
+          <h2 id="rules-title">{t("Rules")}</h2>
           <button
             className="fi-icon-button"
             aria-label={t("Close rules chooser")}
@@ -1777,7 +1762,7 @@ export default function UnifiedInbox() {
         </header>
         <p>{t("Choose the account whose mail the rule can act on.")}</p>
         {accounts.map((a) => (
-          <Link className="fi-rule-account" key={a.id} to={rulesPath(a)}>
+          <Link className="fi-rule-account" key={a.id} to={rulesPath(a)} state={{ from: "mail" }}>
             {a.email}
             <CaretRightIcon size={16} />
           </Link>

@@ -11,7 +11,7 @@ Bounded inventory of actual integrated source wording. Rows remain proposed beca
 | action.account.connect_gmail | Connect Gmail in browser ↗ | app/components/settings/sections/GmailSetup.tsx | SCN-002 | proposed |
 | state.account.not_configured | Gmail is connected through a Google Cloud app of your own, so your mail goes only between Google and your server. | app/components/settings/sections/GmailSetup.tsx | SCN-051 | proposed |
 | state.account.other_unavailable | Not available in this build | app/components/settings/sections/providers.ts | SCN-003 | proposed |
-| navigation.rules | Rules and history | app/components/settings/sections/AccountsSection.tsx | SCN-016 | proposed |
+| navigation.rules | Rules | app/components/settings/sections/AccountsSection.tsx | SCN-016 | proposed |
 | action.mail.sync | Sync now | app/routes/gmail-inbox.tsx:277 | SCN-004 | proposed |
 | action.mail.compose | Compose | app/routes/gmail-inbox.tsx:280 | SCN-006 | proposed |
 | action.mail.send | Send | app/routes/gmail-inbox.tsx:336 | SCN-007 | proposed |
@@ -29,14 +29,17 @@ Bounded inventory of actual integrated source wording. Rows remain proposed beca
 | state.draft.restore_failed | Saved draft could not be restored. It is kept on this device and a new draft starts here. | app/routes/gmail-inbox.tsx | SCN-019 | proposed |
 | state.draft.restore_failed_full | Saved draft could not be restored. It is kept on this device; drafts here are not saved until there is room. | app/routes/gmail-inbox.tsx | SCN-019 | proposed |
 | state.draft.save_failed | This draft could not be saved on this device. Keep this window open. | app/routes/gmail-inbox.tsx:61 | SCN-006 | proposed |
-| action.rule.new | New rule | app/routes/automation.tsx:94 | SCN-014 | proposed |
-| action.rule.dry_run | Dry-run | app/routes/automation.tsx:404 | SCN-014 | proposed |
-| action.rule.save | Save rule | app/routes/automation.tsx:420 | SCN-015 | proposed |
-| action.run.approve | Approve this action | app/routes/automation.tsx:479 | SCN-017 | proposed |
-| action.run.cancel | Cancel run | app/routes/automation.tsx:495 | SCN-017 | proposed |
-| state.rule.preview | Preview only. No message is sent, moved or changed. | app/routes/automation.tsx:407 | SCN-014 | proposed |
-| state.history.empty | No runs yet. History appears when an enabled rule matches new mail. | app/routes/automation.tsx:436 | SCN-016 | proposed |
-| state.outbox.accepted | Accepted means the email provider took the message. Recipient delivery remains unconfirmed. | app/routes/automation.tsx:505 | SCN-007 | proposed |
+| action.rule.new | New rule | app/routes/automation.tsx | SCN-014 | proposed |
+| action.rule.test_run | Test run | app/routes/automation.tsx | SCN-014 | proposed |
+| action.rule.turn_on | Turn on | app/routes/automation.tsx | SCN-015 | proposed |
+| action.rule.save_off | Save without turning on | app/routes/automation.tsx | SCN-015 | proposed |
+| action.run.approve | Approve | app/routes/automation.tsx | SCN-017 | proposed |
+| action.run.cancel | Cancel | app/routes/automation.tsx | SCN-017 | proposed |
+| state.rule.preview | A test run acts on nothing: no message is sent, moved or changed. | app/routes/automation.tsx | SCN-014 | proposed |
+| state.rule.locked | Test-run it on a message first, so you see what it will do. | app/routes/automation.tsx | SCN-015 | proposed |
+| state.rules.empty | A rule acts on new mail that arrives here. | app/routes/automation.tsx | SCN-014 | proposed |
+| state.history.empty | Nothing yet. When a turned-on rule matches new mail, it shows here. | app/routes/automation.tsx | SCN-016 | proposed |
+| state.outbox.accepted | Handed to the mail provider | app/routes/automation.tsx | SCN-007 | proposed |
 | label.desktop.server | Server address | desktop/setup.html:18 | SCN-001 | proposed |
 | action.desktop.connect | Save and connect | desktop/setup.html:25 | SCN-001 | proposed |
 | action.desktop.retry | Retry connection | desktop/setup.html:25 | SCN-019 | proposed |
@@ -76,7 +79,7 @@ Locations name the source function while the integration branch is being formatt
 | navigation.settings.knowledge | Knowledge | app/components/settings/paths.ts | SCN-034 | proposed |
 | action.knowledge.create | Create collection | app/components/settings/sections/KnowledgeSection.tsx | SCN-034 | proposed |
 | label.agents.collections | Knowledge collections it may search | app/components/settings/sections/AgentsSection.tsx | SCN-034 | proposed |
-| navigation.inbox.rules | Rules & history | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-016 | proposed |
+| navigation.inbox.rules | Rules | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-016 | proposed |
 | navigation.inbox.settings | Settings | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-012 | proposed |
 | action.inbox.continue_draft | Continue draft | app/components/inbox/DraftsDialog.tsx | SCN-006 | proposed |
 | action.inbox.compose | Compose | app/routes/unified-inbox.tsx:UnifiedInbox | SCN-006 | proposed |

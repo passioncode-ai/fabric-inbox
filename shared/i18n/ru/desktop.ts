@@ -465,7 +465,6 @@ export const DESKTOP: Readonly<Record<string, string>> = {
 	"The other server does not receive mail for {domain} yet. Connect that domain there first, then try again. Nothing changed on this server.": "Другой сервер ещё не принимает почту для {domain}. Сначала подключите этот домен там, затем попробуйте снова. На этом сервере ничего не изменилось.",
 	"You can close this window; the move goes on while the app is open, and continues from here when you open it again.": "Это окно можно закрыть: перенос идёт, пока приложение открыто, и продолжится с этого места, когда вы откроете окно снова.",
 	"Sign in to {server}": "Войдите в {server}",
-	"Sign In": "Войти",
 	// B-244 D-4 (desktop/rename-server.js, the Account menu): a server's name on this Mac.
 	"Rename Server": "Переименовать сервер",
 	// B-236 (desktop/server-link.cjs, main.cjs handleServerLink): a server added by a link, after the person allows it.
