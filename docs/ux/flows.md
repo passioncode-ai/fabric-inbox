@@ -237,7 +237,7 @@ flowchart TD
 ### FLW-08: Put an agent on a project address
 - **Traces:** ST-008; RE-001
 - **Goal:** A project address receives mail and its agent answers within policy.
-- **Entry points:** Settings → Addresses → Add address, a domain's Add an address on <domain>, the sidebar's Add address, an empty list's Add the first address, or Add this address from recent mail to a missing address — all open the one Add address dialog.
+- **Entry points:** Settings → Addresses → Add address, a domain's Add an address on <domain>, the sidebar's Add address, an empty list's Add the first address, or Add this address from recent mail to a missing address. All open the one Add address dialog.
 - **Success exit:** Address verified, agent assigned, first message handled and visible in history.
 - **Task analysis:** Choose the domain (receiving here, can receive here, or needs Fix it) and the part before @; read the live check; set name, signature, who answers and copy; Create; read the steps (receive the domain, the address, its rule, the test until it arrives); open the address; choose or create an agent; set its policy and tools; watch the first run.
 - **Flow:**

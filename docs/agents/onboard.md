@@ -9,7 +9,7 @@ server step), [`plugins/fabric-inbox/scripts/onboard.mjs`](../../plugins/fabric-
 You, the coding agent, do every step you can. The person does three things only, and each is
 theirs on purpose: **paste the Cloudflare token** into a hidden prompt (or have their secret runner
 inject it), **sign in** to Fabric Inbox with the code Cloudflare emails them, and **choose Allow**
-when the app asks whether to give you a key. Tell them exactly that, at the moment it is due —
+when the app asks whether to give you a key. Tell them exactly that, at the moment it is due:
 every step prints the human part as `→ You:` (or `human` in `--json`).
 
 Never ask for the token or a key in the chat, never put either on a command line, in a file, a URL
@@ -70,7 +70,7 @@ in Settings → Agent access or with `revoke_agent_key`.
 `node scripts/onboard.mjs connect` does the same.) It opens a `fabric-inbox://connect` link: the app
 comes forward, names you and the level, and **the person chooses Allow**. The key goes from the app
 to a one-shot listener on `127.0.0.1` with a fresh request id and straight into the system's key
-store — macOS Keychain, the Secret Service on Linux, the Windows Credential Locker — under the
+store (macOS Keychain, the Secret Service on Linux, the Windows Credential Locker) under the
 service `fabric-inbox-agent-key` and the server's host. It is not printed and not written to any file.
 
 Levels (Settings → Agent access says the same): `read` reads and searches and changes nothing;
@@ -86,8 +86,8 @@ node <plugin>/scripts/onboard.mjs register      # Claude Code, user scope, name 
 node <plugin>/scripts/onboard.mjs prove         # initialize, tools/list, list_accounts
 ```
 
-`register` gives Claude Code the server's `/mcp` URL and a **headersHelper** — a copy of
-`headers.mjs` kept beside the record, so an update of the plugin never moves it — that reads the key
+`register` gives Claude Code the server's `/mcp` URL and a **headersHelper** (a copy of
+`headers.mjs` kept beside the record, so an update of the plugin never moves it) that reads the key
 from the key store on each connection and prints the two Cloudflare Access headers. Claude Code's
 config holds no secret. An existing entry of that name for another address is not replaced unless
 you pass `--replace` (or choose another `--name`). Another MCP client: an HTTP entry with the URL and
@@ -101,7 +101,7 @@ needed and nothing is stored on this machine. The URL must be https and end in `
 
 `prove` makes the calls an agent would, with the stored key, and says how many tools and accounts
 it saw. Run it after every setup; a 401/403 or a redirect to the sign-in page means the key was
-refused (revoked, expired, or never allowed) — run `connect` again.
+refused (revoked, expired, or never allowed); run `connect` again.
 
 A client of your own (a script, another agent) sends the same two headers and a User-Agent of its own: Cloudflare
 answers some default library agents, Python's `urllib` among them, with error 1010 and a 403 before Access reads the
@@ -112,7 +112,7 @@ key (reported 2026-11-06 by an agent calling with a fresh key). Name your client
 
 | What | Where |
 |---|---|
-| The record (server, MCP URL, key id and level, registration; no secret) | `<appData>/PassionCode/fabric-inbox/onboard.json` — macOS `~/Library/Application Support`, Linux `$XDG_CONFIG_HOME` or `~/.config`, Windows `%APPDATA%` |
+| The record (server, MCP URL, key id and level, registration; no secret) | `<appData>/PassionCode/fabric-inbox/onboard.json` (macOS `~/Library/Application Support`, Linux `$XDG_CONFIG_HOME` or `~/.config`, Windows `%APPDATA%`) |
 | The headers helper Claude Code runs | `headers.mjs` beside the record |
 | The server the app's welcome offers | `setup.json` beside the record (written by `server`) |
 | The key | the system key store, service `fabric-inbox-agent-key`, account = the server's host |

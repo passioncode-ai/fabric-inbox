@@ -1,4 +1,4 @@
-# Architecture — a proposal, not as-built
+# Architecture: a proposal, not as-built
 
 Depends on: [brief](brief.md), [measured baseline](evidence.md). Cloud mode and macOS were confirmed by the user on 2026-09-26. New infrastructure and real connections are not configured yet.
 
