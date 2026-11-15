@@ -21,6 +21,7 @@
 | S7 | When I send a reply myself, the agent's draft goes away; a draft lives only until something is sent | [S07](S07-draft-retires.md) | B-272 |
 | S8 | Select text, press Reply: the reply quotes exactly that text | [S08](S08-reply-with-selection.md) | B-273 |
 | S9 | Forward attaches the original files by itself; each can be taken off before sending; the forward and send screen works as it should | [S09](S09-forward.md) | B-274 |
+| S9b | A forward reopened from Drafts on another device keeps its original's files (S09 defect D6) | [S09b](S09b-forward-reopen.md) | B-277 |
 | S10 | "Rules for this account" is unclear: make it a normal working screen | [S10](S10-rules-screen.md) | B-275 |
 | S11 | Settings' accounts show one server's accounts only, while the mail can show All | [S11](S11-settings-servers.md) | B-276 |
 

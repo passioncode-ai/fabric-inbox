@@ -399,3 +399,5 @@ export function browserDraftStore(): DraftStore {
     attachmentsOnDevice(),
   );
 }
+/** The device store's own checks, for a forward's origin read back from the server (B-277). */
+export { forwardSource as parseForwardSource, leftOut as parseLeftOut };
