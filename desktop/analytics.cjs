@@ -1,17 +1,17 @@
 'use strict';
 // Anonymous usage counts (passioncode-ai/fabric-inbox#27, docs/ANALYTICS.md): installs, days of
 // use and how many accounts, mailboxes, agents and agent keys a server has — never a name, an
-// address, a domain, a path, a message or a token. Two tiers (B-198; the analytics server's client
-// contract, "Two tiers", operator decision 2026-11-03): the baseline (starts, days of use, connects)
-// needs no consent, carries no id and writes nothing on the Mac; the person's yes adds the shared
-// installation id, the install and update events and the server's counts. Events go to the organization's self-hosted
+// address, a domain, a path, a message or a token. On by default and told once (operator 2026-11-04; B-200, B-285 under
+// the contract's DEC-0157): nothing is sent before the notice of the current version was shown, a shared off present
+// before the first send is the person's earlier no, and an unreadable shared file holds every send. The baseline tier
+// without an id (B-198) is retired: every event carries the shared installation id. Events go to the organization's self-hosted
 // Aptabase in batches of at most 25 (the ingestion contract of the analytics server); its
 // address comes with the App Key, so the source names no host.
 //
 // Only an app that carries an App Key sends anything: the release workflow writes
 // desktop/analytics.json into the disk image's app; source builds, forks, tests and the store
 // package carry none. The shared installation file (`<appData>/PassionCode/installation.json`)
-// is the one Switchboard and Fabric read: one id per machine, and one switch for every app.
+// is the one Fabric, Switchboard, Fabric Dashboards and the launcher read: one id per machine; each app's switch is its own.
 //
 // Lifecycle (LC-08): no timer. A flush happens when something is tracked or the window comes
 // forward; a refused send waits 60 s, then 10 min, before the next trigger may retry it.
@@ -34,6 +34,11 @@ const COUNT_KEYS = ['gmail', 'cloudflare', 'agents', 'agent_keys'];
 const ERROR_CLASSES = new Set(['http', 'alarm', 'incoming', 'agent', 'send', 'sync']);
 const ERROR_CODE = /^[a-z][a-z0-9_]{0,47}$/;
 const ERROR_EVENTS_MAX = 30;
+/**
+ * B-285 (DEC-0157 UD-1): the notice's version. A notice whose content changed is shown again, once, before anything is
+ * sent under it; version 2 names the products that share the id, what the ids tie together and the resume.
+ */
+const NOTICE_VERSION = 2;
 
 const installationFile = (appData) => path.join(appData, 'PassionCode', 'installation.json');
 const stateFile = (userData) => path.join(userData, 'analytics-state.json');
@@ -57,14 +62,18 @@ function readBundledKey(text) {
   return null;
 }
 
-/** Reads the shared installation file. A file that does not parse is never repaired: analytics stays off. */
+/**
+ * Reads the shared installation file. A file that does not parse, or is not of the shared shape (an id that is a
+ * UUID, `analytics` a boolean when present), is never repaired: nothing is sent while it stays so (UD-2).
+ */
 async function readInstallation(fs, file) {
   let text;
   try { text = await fs.readFile(file, 'utf8'); }
   catch (error) { return { state: error && error.code === 'ENOENT' ? 'missing' : 'unreadable' }; }
   try {
     const value = JSON.parse(text);
-    if (value && typeof value === 'object' && !Array.isArray(value) && typeof value.id === 'string' && UUID.test(value.id)) return { state: 'ok', value };
+    if (value && typeof value === 'object' && !Array.isArray(value) && typeof value.id === 'string' && UUID.test(value.id)
+      && (value.analytics === undefined || typeof value.analytics === 'boolean')) return { state: 'ok', value };
   } catch { /* falls through */ }
   return { state: 'unreadable' };
 }
@@ -154,8 +163,12 @@ function createAnalytics(deps) {
   let failures = 0;
   let flushing = null;
   // `disclosedAt`: when the person was shown what is sent (the first-run notice, or an answer before B-200);
-  // `declined`: true once they turned the details off, false once on, null for an answer kept before B-198.
-  let state = { installed: false, activeDay: '', counts: null, version: '', disclosedAt: '', declined: null };
+  // `declined`: true once they turned the details off, false once they set them on, null while they never set it;
+  // B-285 (UD-1, UD-2): `noticeVersion` the notice version last shown; `earlierNo` the off came from the shared file;
+  // `sharedChecked` a run read the shared file and found no earlier no (the first send, or the stand-in run).
+  let state = { installed: false, activeDay: '', counts: null, version: '', disclosedAt: '', declined: null, noticeVersion: 0, earlierNo: false, sharedChecked: false };
+  // B-285: the shared file could not be read this run, so nothing is sent (UD-2).
+  let blocked = false;
   // B-200: the first-run notice is still to be shown; the launch's options, for an install counted when turned on.
   let noticeDue = false;
   let launchOptions = {};
@@ -170,7 +183,8 @@ function createAnalytics(deps) {
     try {
       const value = JSON.parse(await fs.readFile(stateFile(userData), 'utf8'));
       if (value && typeof value === 'object') state = { installed: value.installed === true, activeDay: typeof value.activeDay === 'string' ? value.activeDay : '', counts: value.counts && typeof value.counts === 'object' ? cleanCounts(value.counts) : null, version: typeof value.version === 'string' ? value.version.slice(0, 50) : '',
-        disclosedAt: typeof value.disclosedAt === 'string' ? value.disclosedAt.slice(0, 40) : '', declined: typeof value.declined === 'boolean' ? value.declined : null };
+        disclosedAt: typeof value.disclosedAt === 'string' ? value.disclosedAt.slice(0, 40) : '', declined: typeof value.declined === 'boolean' ? value.declined : null,
+        noticeVersion: Number.isInteger(value.noticeVersion) ? value.noticeVersion : 0, earlierNo: value.earlierNo === true, sharedChecked: value.sharedChecked === true };
     } catch { /* first run, or an unreadable state: start fresh */ }
   }
   async function saveState() {
@@ -217,7 +231,8 @@ function createAnalytics(deps) {
     finally { clearTimeout(timer); }
   }
   async function flushNow() {
-    while ((installId || baseline) && queue.length) {
+    // UD-1: nothing leaves before the notice of this version was shown; what waits goes after it.
+    while ((installId || baseline) && !noticeDue && queue.length) {
       if (retryAt && now() < retryAt) return;
       const cutoff = now() - MAX_AGE_MS;
       queue = queue.filter(e => e.at >= cutoff);
@@ -233,6 +248,8 @@ function createAnalytics(deps) {
       retryAt = 0; failures = 0;
       const sent = new Set(batch);
       queue = queue.filter(e => !sent.has(e));
+      // UD-2: the first send (of this version, for an install that sent before) ends the reading of an earlier no.
+      if (outcome === 'sent' && !state.sharedChecked) { state.sharedChecked = true; await saveState(); }
     }
   }
   /** Sends what is waiting; one send at a time, never throws. */
@@ -258,13 +275,6 @@ function createAnalytics(deps) {
       baselineStarted = true;
       await flush();
   }
-  /** The baseline tier's start: no id, nothing read or written beyond the shared switch's answer. */
-  async function beginBaseline({ launch = 'ordinary' } = {}) {
-    baseline = true;
-    if (!baselineStarted && track('app_started', { launch: launch === 'link' ? 'link' : 'ordinary' })) baselineStarted = true;
-    await flush();
-  }
-
   /** The person's choice of this product's switch (B-200: per product), kept with when they were first shown it. */
   async function choose(declined) {
     if (!state.disclosedAt) state.disclosedAt = new Date(now()).toISOString();
@@ -277,7 +287,8 @@ function createAnalytics(deps) {
      * Whether this build can send at all, whether it sends the details now, whether the first-run notice is still
      * to be shown, and whether the baseline runs.
      */
-    status: () => ({ available: !!bundle, enabled: !!installId, pending: noticeDue, sentBefore: state.installed === true, baseline }),
+    status: () => ({ available: !!bundle, enabled: !!installId, pending: noticeDue, sentBefore: state.installed === true, baseline,
+      blocked, earlierNo: state.declined === true && state.earlierNo === true }),
 
     /**
      * At launch (B-200, operator 2026-11-04: usage and error data on by default, for installs already out too, off per
@@ -291,22 +302,36 @@ function createAnalytics(deps) {
       if (!bundle || typeof send !== 'function') return;
       launchOptions = { ...options };
       await loadState();
-      let installation = await readInstallation(fs, shared);
-      if (state.declined === null && state.disclosedAt && installation.state === 'ok' && installation.value.analytics === false) {
-        state.declined = true;
-        await saveState();
-      }
-      noticeDue = !state.disclosedAt;
-      if (noticeDue) log({ event: 'analytics_notice', reason: 'not_shown' });
-      // Off is off (B-200, the analytics contract's reading of 2026-11-04): nothing at all, the baseline included.
+      // Off is off (B-200): nothing at all, and no notice that would say it is on.
       if (state.declined === true) return;
+      noticeDue = (state.noticeVersion || 0) < NOTICE_VERSION;
+      if (noticeDue) log({ event: 'analytics_notice', reason: 'not_shown' });
+      let installation = await readInstallation(fs, shared);
+      // UD-2: an unreadable shared file holds every send of this run, on or not; it is read again at the next start.
+      if (installation.state === 'unreadable') {
+        blocked = true;
+        log({ event: 'analytics_off', reason: 'installation_unreadable' });
+        return;
+      }
+      // UD-2: an earlier no. Until the person set this product's switch on, a shared off present before the first send
+      // (or at this version's first run, for an install that sent before) is their no; once a run found none, it is not
+      // read for the switch again.
+      if (state.declined !== false && !state.sharedChecked) {
+        if (installation.state === 'ok' && installation.value.analytics === false) {
+          state.declined = true; state.earlierNo = true;
+          await saveState();
+          noticeDue = false;
+          log({ event: 'analytics_off', reason: 'earlier_no' });
+          return;
+        }
+      }
       if (installation.state === 'missing') {
         try { installation = await ensureInstallation({ fs, file: shared, uuid, now }); }
         catch (error) { log({ event: 'analytics_off', reason: 'installation_not_written', code: error && error.code || 'error' }); }
       }
       if (installation.state !== 'ok') {
+        blocked = true;
         log({ event: 'analytics_off', reason: 'installation_unreadable' });
-        await beginBaseline(options);
         return;
       }
       await begin({ ...installation, created: installation.created === true }, options);
@@ -315,7 +340,19 @@ function createAnalytics(deps) {
     /** B-200: the first-run notice was shown; the switch stays as it is. */
     async noticeShown() {
       noticeDue = false;
-      if (!state.disclosedAt) { state.disclosedAt = new Date(now()).toISOString(); await saveState(); }
+      if (!state.disclosedAt) state.disclosedAt = new Date(now()).toISOString();
+      state.noticeVersion = NOTICE_VERSION;
+      // UD-2 (K-1 of the review): a shared off written while the notice held the first send is still an earlier no.
+      if (installId && state.declined !== false && !state.sharedChecked) {
+        const installation = await readInstallation(fs, shared);
+        if (installation.state === 'unreadable') { blocked = true; queue = []; installId = null; }
+        else if (installation.state === 'ok' && installation.value.analytics === false) {
+          state.declined = true; state.earlierNo = true; queue = []; installId = null;
+          log({ event: 'analytics_off', reason: 'earlier_no' });
+        }
+      }
+      await saveState();
+      await flush();
     },
 
     /**
@@ -384,11 +421,16 @@ function createAnalytics(deps) {
      */
     async setEnabled(enabled) {
       if (!bundle) return false;
-      noticeDue = false;
       if (enabled) {
         const installation = await ensureInstallation({ fs, file: shared, uuid, now }).catch(() => null);
         if (!installation || installation.state !== 'ok') return false;
         await loadState();
+        // The person setting this product's switch on ends an earlier no; the shared file is not written (UD-2).
+        state.earlierNo = false;
+        state.sharedChecked = true;
+        blocked = false;
+        // A notice of this version not yet shown is shown before anything goes (UD-1).
+        noticeDue = (state.noticeVersion || 0) < NOTICE_VERSION;
         await choose(false);
         if (installId) return true;
         state.counts = null;
@@ -398,6 +440,8 @@ function createAnalytics(deps) {
       queue = [];
       installId = null;
       baseline = false;
+      noticeDue = false;
+      state.earlierNo = false;
       await choose(true);
       return true;
     },
@@ -431,4 +475,4 @@ function countsWith(ses, origin) {
   };
 }
 
-module.exports = { createAnalytics, countsWith, cleanErrors, readBundledKey, analyticsOrigin, readInstallation, ensureInstallation, writeSwitch, installationFile, stateFile, SDK, BATCH, KEY };
+module.exports = { NOTICE_VERSION, createAnalytics, countsWith, cleanErrors, readBundledKey, analyticsOrigin, readInstallation, ensureInstallation, writeSwitch, installationFile, stateFile, SDK, BATCH, KEY };

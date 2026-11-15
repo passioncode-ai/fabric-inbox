@@ -22,8 +22,12 @@ function menuTemplate(platform, ctx) {
     // B-44: shown only while the server is older than the server this app carries.
     ...(ctx.serverUpdate ? [{ label: ctx.serverUpdate.label, enabled: ctx.serverUpdate.enabled, click: ctx.serverUpdate.click }] : []),
   ];
+  // B-285 (DEC-0157 UD-2): an unreadable shared file shows the switch on but not sending (Off stays possible); an earlier
+  // no from the shared file says why the switch is off.
   const usage = [
-    { label: t('Share Usage Details'), type: 'checkbox', checked: ctx.usage.checked, enabled: ctx.usage.enabled, click: ctx.usage.click },
+    { label: ctx.usage.blocked ? t('Share Usage Details (on, but nothing is sent)') : ctx.usage.earlierNo ? t('Share Usage Details (off: an earlier choice for the PassionCode apps on this computer)') : t('Share Usage Details'),
+      type: 'checkbox', checked: ctx.usage.blocked ? true : ctx.usage.checked, enabled: ctx.usage.enabled, click: ctx.usage.click },
+    ...(ctx.usage.blocked ? [{ label: t('Nothing is sent until PassionCode/installation.json can be read; it is read again at each start'), enabled: false }] : []),
     { label: t('About Usage Counts…'), click: ctx.usage.about },
   ];
   // Open at Login: on by default for an installed copy (the organization's lifecycle rule, 2026-10-16).
