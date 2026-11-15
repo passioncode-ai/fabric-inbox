@@ -90,3 +90,13 @@ test("rule and safety events of a thread's messages, oldest first, from the runs
   ]);
   assert.deepEqual(events[0]!.values, { name: "Invoices", to: "accounts@owner.example" });
 });
+
+test("B-283: a reply whose message is hidden behind \"Show earlier messages\" is nested, as is one under a draft card; a reply to the shown cell above is not", async () => {
+  const { shownNesting } = await import("../app/components/inbox/quotes");
+  // Rows 0..3; row 2 answers row 1, row 3 answers row 2. With two rows hidden, row 2 is the first shown: its message is hidden.
+  assert.deepEqual(shownNesting([-1, 0, 1, 2], 2, () => false), [false, true, true, false]); // row 1 is hidden: not drawn either way
+  // Nothing hidden: each reply answers the cell right above.
+  assert.deepEqual(shownNesting([-1, 0, 1, 2], 0, () => false), [false, false, false, false]);
+  // Row 1 is a draft drawn as a card: row 2 answers it, so no cell of it is above row 2.
+  assert.deepEqual(shownNesting([-1, 0, 1, 2], 0, (i) => i === 1), [false, false, true, false]);
+});

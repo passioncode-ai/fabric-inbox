@@ -6,7 +6,7 @@ import { senderName, type InboxMessage } from "./model";
 import { unreadOf, type ThreadRow } from "./thread";
 import { listDate } from "./triage-view";
 import { agentRunLabel, agentRunNeedsLook } from "./agent-run";
-import { answeredRows, foldQuotedHtml, nestedRows, splitQuotedText, type QuoteLabels, type ThreadEvent } from "./quotes";
+import { answeredRows, foldQuotedHtml, shownNesting, splitQuotedText, type QuoteLabels, type ThreadEvent } from "./quotes";
 import { addressOf, compactRecipients, headerFacts } from "./message-header";
 import { cardNeedsScroll, cardPlacement, cardToShow, retiredCards, type GoneCard, type ShownCard } from "./draft-card";
 import { useAgentName } from "./agent-name";
@@ -131,8 +131,9 @@ export default function ConversationList({ rows, openId, onOpen, loadBody, onMar
   const shown = rows.slice(hidden);
   const answered = answeredRows(rows.map((r) => ({ internalId: r.message.providerMessageId, rfcMessageId: r.rfcMessageId,
     inReplyTo: r.inReplyTo, references: r.references, draft: r.kind === "draft" })));
-  // A-16: a reply is nested against the cell drawn above it, not against a draft drawn as a card in between.
-  const nestedAt = nestedRows(answered, (i) => !placement?.taken.has(rows[i]!.message.id));
+  // A-16, B-283: a reply is nested against the cell drawn above it, not against a draft drawn as a card in between
+  // or a message hidden behind "Show earlier messages".
+  const nestedAt = shownNesting(answered, hidden, (i) => !!placement?.taken.has(rows[i]!.message.id));
   return (
     <section ref={sectionRef} className="fi-thread" aria-label={t("Conversation")}>
       <div className="fi-thread-head">

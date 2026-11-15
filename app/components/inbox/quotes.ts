@@ -152,6 +152,15 @@ export function nestedRows(answered: readonly number[], drawn: (index: number) =
   });
 }
 
+/**
+ * B-283 (K-3 of the F1 review): nesting over the cells actually on the screen. Rows hidden behind "Show earlier
+ * messages" and drafts drawn as a card are not the cell above, so the first reply shown is set in one level (with
+ * "In reply to", whose Go to message opens the earlier ones) when the message it answers is hidden.
+ */
+export function shownNesting(answered: readonly number[], hidden: number, isCard: (index: number) => boolean): boolean[] {
+  return nestedRows(answered, (i) => i >= hidden && !isCard(i));
+}
+
 /** A rule's run on a message of the thread, as `GET /api/automation/:account/runs` lists it. */
 export interface RunLike {
   emailId: string;
