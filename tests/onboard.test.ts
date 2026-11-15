@@ -170,6 +170,24 @@ test("register: Claude Code gets the URL and a headersHelper; the secret is in n
   assert.ok(removed.some((a) => a[1] === "remove"), "--replace replaces it");
 });
 
+test("B-284: register takes a URL and the caller's own headers command for a key another store holds, and refuses a bad one", async () => {
+  const calls: string[][] = [];
+  events.length = 0;
+  const before = existsSync(m.recordPath()) ? readFileSync(m.recordPath(), "utf8") : null;
+  const entry = await m.stepRegister({ url: "https://inbox.example/mcp", "headers-command": "/opt/bin/inbox-headers --server inbox", name: "inbox-b" },
+    { say, exec: async (_f: string, args: string[]) => { calls.push(args); return ""; } });
+  assert.deepEqual(entry, { type: "http", url: "https://inbox.example/mcp", headersHelper: "/opt/bin/inbox-headers --server inbox" });
+  const add = calls.find((a) => a[1] === "add-json")!;
+  assert.deepEqual(add.slice(0, 5), ["mcp", "add-json", "--scope", "user", "inbox-b"]);
+  assert.deepEqual(JSON.parse(add[5]), entry);
+  assert.equal(existsSync(m.recordPath()) ? readFileSync(m.recordPath(), "utf8") : null, before, "nothing is stored here");
+  assert.match(events.at(-1).detail, /your headers command/);
+  for (const bad of [{ url: "http://inbox.example/mcp", "headers-command": "x" }, { url: "https://inbox.example/", "headers-command": "x" },
+    { url: "https://u:p@inbox.example/mcp", "headers-command": "x" }, { url: "https://inbox.example/mcp" }, { "headers-command": "x" },
+    { url: "https://inbox.example/mcp", "headers-command": "a\nb" }])
+    await assert.rejects(m.stepRegister(bad, { say, exec: async () => "" }), (e: any) => e.code === "usage", JSON.stringify(bad));
+});
+
 test("headers: what the headersHelper prints is exactly the two Access headers from the store", async () => {
   const store = fakeStore();
   await store.put("fabric-inbox.me.workers.dev", { clientId: "abc.access", clientSecret: "s3cret" });

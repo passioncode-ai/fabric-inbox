@@ -5,6 +5,9 @@
 //
 //   node onboard.mjs connect  [--level read|mail|admin] [--send] [--client NAME] [--client-id ID]
 //   node onboard.mjs register [--name fabric-inbox] [--scope user|local|project] [--replace]
+//   node onboard.mjs register --url https://<server>/mcp --headers-command "<command>" [--name …] [--scope …] [--replace]
+//     (B-284: a key kept in another store, on a machine whose key store is closed: the command prints the two
+//     Access headers as JSON, as headers.mjs does; no connect step and nothing stored here)
 //   node onboard.mjs prove
 //   node onboard.mjs status   [--json]
 //   node onboard.mjs forget   (removes the stored key and record; the key itself is revoked in the app)
@@ -115,12 +118,26 @@ export function mcpEntry(record) {
   return { type: 'http', url: record.mcpUrl, headersHelper: headersCommand(record.server) };
 }
 
+/** B-284: the entry for a key another store holds: the server's /mcp URL and the caller's own headers command. */
+export function externalEntry(opts) {
+  const command = String(opts['headers-command'] ?? '').trim();
+  let url;
+  try { url = new URL(String(opts.url ?? '')); } catch { url = null; }
+  if (!url || url.protocol !== 'https:' || !url.pathname.endsWith('/mcp') || url.search || url.username || url.password)
+    throw new OnboardError('usage', '--headers-command needs --url, the server\'s https address ending in /mcp.');
+  if (!command || /[\r\n]/.test(command)) throw new OnboardError('usage', '--headers-command needs a command on one line.');
+  return { type: 'http', url: url.href, headersHelper: command };
+}
+
 export async function stepRegister(opts, { say, exec = run } = {}) {
-  const record = readRecord();
-  const entry = mcpEntry(record);
+  const external = opts['headers-command'] !== undefined || opts.url !== undefined;
+  const record = external ? {} : readRecord();
+  const entry = external ? externalEntry(opts) : mcpEntry(record);
   const name = opts.name || 'fabric-inbox';
-  mkdirSync(path.dirname(helperPath()), { recursive: true });
-  copyFileSync(fileURLToPath(new URL('./headers.mjs', import.meta.url)), helperPath());
+  if (!external) {
+    mkdirSync(path.dirname(helperPath()), { recursive: true });
+    copyFileSync(fileURLToPath(new URL('./headers.mjs', import.meta.url)), helperPath());
+  }
   const scope = opts.scope || 'user';
   // An entry of that name is replaced only when it is this server's, or when asked: never someone else's.
   const existing = await exec('claude', ['mcp', 'get', name]).catch(() => '');
@@ -132,8 +149,8 @@ export async function stepRegister(opts, { say, exec = run } = {}) {
   catch (error) {
     throw new OnboardError('register', `claude mcp add-json failed (${String(error.stderr || error.message).trim().slice(0, 200)}). For another MCP client, use: ${JSON.stringify(entry)}`);
   }
-  writeRecord({ ...record, registered: { client: 'claude-code', name, scope } });
-  say({ step: 'register', outcome: 'done', detail: `Claude Code knows "${name}" (${scope} scope); its headers come from the key store` });
+  if (!external) writeRecord({ ...record, registered: { client: 'claude-code', name, scope } });
+  say({ step: 'register', outcome: 'done', detail: `Claude Code knows "${name}" (${scope} scope); its headers come from ${external ? 'your headers command' : 'the key store'}` });
   return entry;
 }
 

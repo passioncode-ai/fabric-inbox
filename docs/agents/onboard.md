@@ -93,6 +93,12 @@ config holds no secret. An existing entry of that name for another address is no
 you pass `--replace` (or choose another `--name`). Another MCP client: an HTTP entry with the URL and
 the same helper's output as its headers; the refusal of `register` prints the entry.
 
+A machine whose key store is closed (a headless space, a server) or whose key is kept in another
+store registers with its own command instead (B-284): `onboard.mjs register --url
+https://<server>/mcp --headers-command "<command>"`. The command prints the two Cloudflare Access
+headers as JSON, as `headers.mjs` does, and Claude Code runs it on each connection; `connect` is not
+needed and nothing is stored on this machine. The URL must be https and end in `/mcp`.
+
 `prove` makes the calls an agent would, with the stored key, and says how many tools and accounts
 it saw. Run it after every setup; a 401/403 or a redirect to the sign-in page means the key was
 refused (revoked, expired, or never allowed) — run `connect` again.
