@@ -131,7 +131,7 @@ export async function toolDraftReply(
 	if (params.runVerifyDraft) {
 		const sanitized = await verifyDraft(env.AI, processedBody);
 		if (!sanitized) {
-			return { error: "Draft verification failed — body could not be verified. Please try again." };
+			return { error: "Draft verification failed: the body could not be verified. Please try again." };
 		}
 		processedBody = sanitized;
 	}
@@ -212,7 +212,7 @@ export async function toolDraftEmail(
 	if (params.runVerifyDraft) {
 		const sanitized = await verifyDraft(env.AI, processedBody);
 		if (!sanitized) {
-			return { error: "Draft verification failed — body could not be verified. Please try again." };
+			return { error: "Draft verification failed: the body could not be verified. Please try again." };
 		}
 		processedBody = sanitized;
 	}

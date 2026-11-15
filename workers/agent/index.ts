@@ -175,7 +175,7 @@ function createEmailTools(env: Env, mailboxId: string) {
 
 		draft_email: defineTool({
 			description:
-				"Draft a new email (not a reply) and save it to the Drafts folder. This does NOT send — it saves a draft for the operator to review. Use this for composing new outbound emails. Write the body as plain text — no HTML tags.",
+				"Draft a new email (not a reply) and save it to the Drafts folder. This does NOT send: it saves a draft for the operator to review. Use this for composing new outbound emails. Write the body as plain text, with no HTML tags.",
 			parameters: z.object({
 				to: z.string().email().describe("Recipient email address"),
 				subject: z
@@ -184,7 +184,7 @@ function createEmailTools(env: Env, mailboxId: string) {
 				body: z
 					.string()
 					.describe(
-						"The plain text body of the email. No HTML — just write normally.",
+						"The plain text body of the email. No HTML; just write normally.",
 					),
 			}),
 			execute: async ({ to, subject, body }): Promise<unknown> => {
@@ -199,7 +199,7 @@ function createEmailTools(env: Env, mailboxId: string) {
 
 		draft_reply: defineTool({
 			description:
-				"Draft a reply to an existing email and save it to the Drafts folder. This does NOT send — it saves a draft for the operator to review and send from the UI. Write the body as plain text — no HTML tags.",
+				"Draft a reply to an existing email and save it to the Drafts folder. This does NOT send: it saves a draft for the operator to review and send from the UI. Write the body as plain text, with no HTML tags.",
 			parameters: z.object({
 				originalEmailId: z
 					.string()
@@ -211,7 +211,7 @@ function createEmailTools(env: Env, mailboxId: string) {
 				body: z
 					.string()
 					.describe(
-						"The plain text body of the reply. No HTML — just write normally.",
+						"The plain text body of the reply. No HTML; just write normally.",
 					),
 			}),
 			execute: async ({ originalEmailId, to, subject, body }): Promise<unknown> => {
