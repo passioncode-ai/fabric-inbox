@@ -10,7 +10,7 @@ export const PROTOCOL_NAME = "fabric-inbox";
 const LEVEL_TEXT = {
   read: "read: you can read and search mail and see how everything is set up; you change nothing.",
   mail: "mail: you can read, draft, and handle mail (mark, move, report spam); you change no settings.",
-  admin: "admin: you can do everything the app does — mail, addresses and domains on Cloudflare, forwarding, spam lists, reply agents, categories, knowledge, rules and setup.",
+  admin: "admin: you can do everything the app does: mail, addresses and domains on Cloudflare, forwarding, spam lists, reply agents, categories, knowledge, rules and setup.",
 } as const;
 
 /** A key limited to mailboxes has only the tools that stay inside one (scope.ts): say just those. */

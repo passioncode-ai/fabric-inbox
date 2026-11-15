@@ -1158,7 +1158,7 @@ export async function runAgent(input: { mailboxId: string; emailId: string }, de
           run.checkerRoom = { factsChars: facts.length, factsLimit: CHECK_LIMITS.facts, left: CHECK_LIMITS.facts - facts.length, cut, ...(dropped.length ? { dropped } : {}) };
           const verdict = await deps.check(response.model ?? "", { message, facts, answer: body });
           record.ok = verdict.approved;
-          record.result = `${verdict.model}: ${verdict.approved ? "approved" : "rejected"} — ${verdict.reason}`.slice(0, RESULT_PREVIEW_CHARS);
+          record.result = `${verdict.model}: ${verdict.approved ? "approved" : "rejected"}: ${verdict.reason}`.slice(0, RESULT_PREVIEW_CHARS);
           run.checkedBy = verdict.model;
           if (verdict.usage?.length) run.usage = [...(run.usage ?? []), ...asRole(verdict.usage, "checker")].slice(0, MAX_RECEIPTS);
           if (run.modelCalls) run.modelCalls.calls++;

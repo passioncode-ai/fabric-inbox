@@ -52,8 +52,8 @@ and [your deployment](#configure-your-deployment).
    hand or making a personal build: [Configure your deployment](#configure-your-deployment).
 3. **MCP.** The installed app listens on no port and serves no MCP of its own: it
    opens your server, and agents connect to that server at **`<your server>/mcp`**, where
-   `<your server>` is the address in **Fabric Inbox → Server address…** — for a server made by
-   **Create my server**, `https://fabric-inbox.<your-workers-subdomain>.workers.dev/mcp`. In the app,
+   `<your server>` is the address in **Fabric Inbox → Server address…** (for a server made by
+   **Create my server**, `https://fabric-inbox.<your-workers-subdomain>.workers.dev/mcp`). In the app,
    **Settings → Agent access** makes a key and prints the whole command,
    `claude mcp add --transport http fabric-inbox https://<your-server>/mcp --header …`
    ([agent protocol → Connect](docs/agents/mcp.md#connect)). To try it with no account at all, run
@@ -76,8 +76,8 @@ and [your deployment](#configure-your-deployment).
 - **All inboxes, triaged.** Cloudflare mailboxes, Gmail accounts and IMAP accounts in one list. Focus shows
   Important first (a person's unread mail, security and sign-in mail, monitoring alerts, app
   review rejections, failed payments, CI failures, starred); the rest sits in collapsed groups
-  — people, security, alerts, app stores, billing, dev & CI, notifications, social,
-  newsletters — with counts. Filters: unread only, one group, one account, search of cached
+  (people, security, alerts, app stores, billing, dev & CI, notifications, social,
+  newsletters) with counts. Filters: unread only, one group, one account, search of cached
   mail. Placement is deterministic header and label rules, and each row says why.
 - **Settings.** One screen (the gear in the sidebar, or **Settings…** ⌘, in the Mac app) with a
   section list, a searchable list and the chosen item beside it; choosing an item never moves the
@@ -86,8 +86,8 @@ and [your deployment](#configure-your-deployment).
 - **Keyboard triage.** Delete or Backspace archives and marks read; ⌘⌫ (Ctrl+Backspace) discards;
   ⌘Z undoes either; ↓/J and ↑/K move, Shift and ⌘-click choose several; ? lists every key.
 - **Discarded.** Mail thrown away on purpose waits 30 days in Discarded (Gmail: a label of that name;
-  IMAP and Outlook: a folder of that name), apart from Trash and Spam. Each discard teaches a rule —
-  the newsletter, else the sender — and later mail like it goes straight there, never from someone
+  IMAP and Outlook: a folder of that name), apart from Trash and Spam. Each discard teaches a rule
+  (the newsletter, else the sender), and later mail like it goes straight there, never from someone
   you wrote to or a conversation you are in. Not discarded brings one back; Settings → Discard rules
   shows why each rule was learned.
 - **Freshness in view.** Refresh sits under the list's title with the server's last read of each
@@ -97,7 +97,7 @@ and [your deployment](#configure-your-deployment).
   in the addresses that already exist while each keeps forwarding a copy where it went before,
   points them here, and turns on sending with a DMARC record. Add and remove addresses, choose a
   catch-all, add forwarding destinations, or send a domain's mail back. Mail to an address
-  without a mailbox is refused (or kept in the catch-all) and listed with its name — never
+  without a mailbox is refused (or kept in the catch-all) and listed with its name, never
   dropped. The sidebar groups addresses by domain with unread counts.
 - **Agents.** Named, versioned definitions (instructions, knowledge, remote MCP tools, reply
   policy) reused across addresses or Off per address. No-reply, bulk, list and automatic mail
@@ -110,8 +110,8 @@ and [your deployment](#configure-your-deployment).
 - **Outlook.com and Microsoft 365.** Outlook, Hotmail, Live and Microsoft 365 mailboxes through
   Microsoft Graph with the person's own Microsoft sign-in (Outlook.com no longer accepts
   passwords from other mail apps since 2024-09-16). The owner registers an app in Microsoft
-  Entra once — Settings → Accounts → Connect account → Outlook lists every value to copy, saves
-  the client ID and secret on the server and warns 30 days before the secret ends — then each
+  Entra once (Settings → Accounts → Connect account → Outlook lists every value to copy, saves
+  the client ID and secret on the server and warns 30 days before the secret ends); then each
   account is connected in the browser. Read, triage, reply, forward with files, drafts, archive,
   Junk Email and Deleted Items work as on Gmail; an organization that lets only its
   administrators allow apps gets the approval link to send them
@@ -295,8 +295,8 @@ The Worker is `fabric-inbox`; the original `agentic-inbox` Worker is separate.
 
 ## Configure your deployment
 
-Your deployment's values — Cloudflare account id, server address, Access team and audience,
-domains, addresses — are yours, so they never enter Git: `deployments/<name>/` is git-ignored,
+Your deployment's values (Cloudflare account id, server address, Access team and audience,
+domains, addresses) are yours, so they never enter Git: `deployments/<name>/` is git-ignored,
 and the repository carries only [the guide](deployments/README.md) and placeholder
 `deployments/*.example.json` files. **Create my server** in the app needs none of this. To deploy
 by hand, keep ops receipts or make a personal build:
@@ -315,7 +315,7 @@ does not have it. Every field is explained in [deployments/README.md](deployment
 ## License
 
 Open source under the [GNU AGPL-3.0](LICENSE). A [commercial license](COMMERCIAL-LICENSE.md) is
-available for use that does not meet the AGPL's terms — [passioncode.ai/business](https://passioncode.ai/business/).
+available for use that does not meet the AGPL's terms: [passioncode.ai/business](https://passioncode.ai/business/).
 Versions up to and including 0.7.1 were released under the Apache License 2.0.
 The code imported from Cloudflare's Agentic Inbox template stays under Apache-2.0 with its
 copyright notices ([third-party notices](THIRD_PARTY_NOTICES.md)). Contributions are accepted

@@ -471,7 +471,7 @@ async function main() {
       platform: 'darwin', arch: 'universal', electronVersion, out: path.join(temp, 'out'), overwrite: true, asar: CONSOLE_ASAR, prune: false,
       ignore: [/\/(?:mas-package|package|dist-mac|dist-platform|hardening|release-retention|console-assets)\.mjs$/, /\/entitlements\.mac\.plist$/, /\/icon\.(?:icns|ico|png)$/, /\/dmg-background/, /^\/(?:linux|windows)\//],
       // ElectronSquirrelPreventDowngrades: Squirrel.Mac refuses a bundle older than this one (LC-16).
-      extendInfo: { NSHumanReadableCopyright: 'Fabric Inbox — PassionCode.ai', NSRequiresAquaSystemAppearance: false, LSMinimumSystemVersion: '12.0', ElectronSquirrelPreventDowngrades: true },
+      extendInfo: { NSHumanReadableCopyright: 'Fabric Inbox by PassionCode.ai', NSRequiresAquaSystemAppearance: false, LSMinimumSystemVersion: '12.0', ElectronSquirrelPreventDowngrades: true },
       // LC-13/LC-07: fuses flipped and unused purpose strings stripped in the Electron template, before
       // the app is assembled and signed (desktop/hardening.mjs); verified on the built app below.
       afterExtract: hardenTemplateHook(),
