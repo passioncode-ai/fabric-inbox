@@ -1087,6 +1087,8 @@ async function checkForUpdates() {
 async function toggleAnalytics(item) {
   if (!analytics) return;
   const ok = await analytics.setEnabled(!!item.checked);
+  // B-285: turned on before this version's notice was shown, the notice comes first (UD-1).
+  if (ok && item.checked) { usageAsked = false; void askUsageCounts(BrowserWindow.getFocusedWindow()); }
   if (!ok && item.checked) {
     await dialog.showMessageBox({ type: 'warning', title: t('Usage counts'), message: t('Usage details could not be turned on.'),
       detail: t('The shared PassionCode settings file on this Mac could not be read, so usage details are not sent.'), buttons: [t('OK')] });
@@ -1094,7 +1096,13 @@ async function toggleAnalytics(item) {
   installMenu();
   if (analytics.status().enabled) void countActive();
 }
-const usageCountsText = () => t('Fabric Inbox sends PassionCode.ai anonymous usage and error data, so we can improve it: when it is opened and used, when a server or a hub is connected, that it was installed or updated, how many Gmail accounts, Cloudflare mailboxes, agents and agent keys your server has, when part of the app stopped with an error, and how many errors of each kind your server had the day before, as codes. An id shared by the PassionCode apps on this computer counts one person once. It never sends names, email addresses, domains, messages, keys or anything from your mail. You can turn it off any time with Share Usage Details in the menu; that turns it off for Fabric Inbox only, and then nothing is sent.');
+// B-285 (DEC-0157 UD-1): what is sent and why, the shared id with the apps that share it, what the ids tie together,
+// where it goes, what may go at once, and where the switch is. Changing it raises NOTICE_VERSION in analytics.cjs.
+const usageCountsText = () => [
+  t('Fabric Inbox sends PassionCode.ai anonymous usage and error data, so we can improve it: when it is opened and used, when a server or a hub is connected, that it was installed or updated, how many Gmail accounts, Cloudflare mailboxes, agents and agent keys your server has, when part of the app stopped with an error, and how many errors of each kind your server had the day before, as codes. It never sends names, email addresses, domains, messages, keys or anything from your mail.'),
+  t('Each event carries an installation id that Fabric, Fabric Switchboard, Fabric Dashboards and the PassionCode launcher on this computer share, so one computer is counted once across them. The id names no one, but it ties together the events of this computer, in these apps too; a session id ties together the events of one session. The list of apps that share the id: https://github.com/passioncode-ai/fabric-inbox/blob/main/docs/ANALYTICS.md'),
+  t('What was collected since Fabric Inbox started may be sent now. You can turn it off any time with Share Usage Details in the menu; that turns it off for Fabric Inbox only, and then nothing is sent. Turning it back on uses the same shared id again.'),
+].join('\n\n');
 function aboutUsageCounts() {
   void dialog.showMessageBox({ type: 'info', title: t('Usage counts'), message: t('Usage counts'), detail: usageCountsText(), buttons: [t('OK')] });
 }
@@ -1104,17 +1112,25 @@ function aboutUsageCounts() {
  * or on for Fabric Inbox only. Shown once; it waits while a hub's connect dialog is open.
  */
 let usageAsked = false;
+/** How long the notice is open before it counts as shown (B-285, review K-4). */
+const NOTICE_OPEN_MS = 1500;
 async function askUsageCounts(win) {
   if (usageAsked || !analytics || !analytics.status().pending || !win || win.isDestroyed()) return;
   // Review 2026-10-21: a hub's Allow/Deny comes first; the notice waits until it is answered.
   if (connecting || pendingLinks.length) return;
   usageAsked = true;
-  const { response } = await dialog.showMessageBox(win, { type: 'info', title: t('Usage counts'),
+  const shown = dialog.showMessageBox(win, { type: 'info', title: t('Usage counts'),
     message: t('Fabric Inbox shares anonymous usage and error data'),
     detail: usageCountsText(), buttons: [t('OK'), t('Turn Off')], defaultId: 0, cancelId: 0 });
+  // A notice, not a question (DEC-0157 UD-1): it counts as shown once it has been open NOTICE_OPEN_MS, never waiting
+  // on the answer; a Turn Off within that time drops everything before anything is sent (review K-4).
+  const first = await Promise.race([shown.then((r) => ({ answer: r }), () => ({ failed: true })), new Promise((done) => setTimeout(() => done(null), NOTICE_OPEN_MS))]);
+  if (first && first.failed) { usageAsked = false; return; }
+  if (first && first.answer.response === 1) await analytics.setEnabled(false);
   await analytics.noticeShown();
+  const { response } = first ? first.answer : await shown.catch(() => ({ response: 0 }));
   logEvent({ event: 'analytics_notice', answer: response === 1 ? 'off' : 'ok' });
-  if (response === 1) await analytics.setEnabled(false);
+  if (response === 1 && !(first && first.answer)) await analytics.setEnabled(false);
   installMenu();
 }
 function queueLink(url) {
@@ -1545,7 +1561,8 @@ function installMenu() {
       },
     },
     automatic: { checked: !!(state && state.automatic), enabled: !!updater && !['off', 'unavailable'].includes(state.state), click: (item) => { if (updater) void updater.setAutomatic(item.checked); } },
-    usage: { checked: !!(analytics && analytics.status().enabled), enabled: !!analytics, click: (item) => void toggleAnalytics(item), about: aboutUsageCounts },
+    usage: { checked: !!(analytics && analytics.status().enabled), enabled: !!analytics, click: (item) => void toggleAnalytics(item), about: aboutUsageCounts,
+      blocked: !!(analytics && analytics.status().blocked), earlierNo: !!(analytics && analytics.status().earlierNo) },
     login: { checked: !!(loginItem && loginItem.enabled), enabled: !!(loginItem && loginItem.supported), click: (item) => void toggleLogin(item) },
     serverUpdate: serverUpdater ? serverUpdater.menuItem(() => void serverUpdater.update({ manual: true })) : null,
     newMail: { checked: !!(mailNotifier && mailNotifier.enabled()), enabled: !!mailNotifier, click: (item) => { if (mailNotifier) void mailNotifier.setEnabled(item.checked).then(installMenu); } },

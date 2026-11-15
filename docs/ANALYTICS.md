@@ -13,6 +13,31 @@ organization's self-hosted Aptabase at `https://analytics.owner.example` (`the a
 its `docs/client-contract.md`). The approach is the one Switchboard shipped first (its
 `docs/ANALYTICS.md`); the organization's shared answer is roadmap track RM-13.
 
+## Under the contract's DEC-0157 (B-285, 1.7.2)
+
+The contract's usage data rules (fabric-agent-contract `docs/specification/usage-data.md`, UD-1 to UD-6, DEC-0157,
+`main` `8736d21d`) apply from 1.7.2 ([task packet](app-store/tasks/2026-11-15-usage-data-dec-0157.md)):
+
+- **Nothing before the notice (UD-1).** Events are collected from the start into the queue (at most 200, none older
+  than 23 hours) and nothing is sent until the notice of the current version (`noticeVersion` 2 in
+  `analytics-state.json`) was shown. It counts as shown when it opens, never when it is answered. A notice whose content
+  changes raises the version and is shown again, once (an install shown version 1 sees version 2).
+- **An earlier no (UD-2).** Until the person sets this app's switch on, a shared `analytics: false` present before the
+  first send, or at the first run of 1.7.2 for an install that sent before (the stand-in run), is their earlier no:
+  kept as `declined` with `earlierNo`, shown in the menu as *Share Usage Details (off: an earlier choice for the
+  PassionCode apps on this computer)*, and the notice is not shown. Once a run read the file and found no off
+  (`sharedChecked`), the shared field is never read for the switch again. Setting the switch on ends the earlier no and
+  writes nothing shared.
+- **An unreadable shared file holds every send (UD-2).** Nothing is sent in that run; the menu shows the switch on,
+  disabled, *(on, but nothing is sent)*, with the line that names the file. The baseline without an id (B-198) is
+  retired: every event carries the shared id.
+- **The products that share the id**, as of 1.7.2: Fabric, Fabric Switchboard, Fabric Dashboards and the PassionCode
+  launcher (with Fabric Inbox). This list is the one the notice links to; a new product is named here before it first
+  sends the shared id.
+
+The agent door to the switch (UD-4, a relayed `change-policy`) is not built: when to build it is the operator's
+(DEC-0157 *Compatibility*; B-236).
+
 ## On by default, off per product (B-200)
 
 Since 0.87.0 (B-200; operator decision 2026-11-04, relayed by Fabric's session: anonymous usage and error data
@@ -37,8 +62,8 @@ product) the details go out from the first launch:
   explicit choice; the coordinator recorded this reading in the wave plan (2026-11-04).
 - **Off is off.** With the switch off nothing is sent at all, the B-198 baseline included: the reading growth wrote
   into the consent contract on 2026-11-04 (board thread `b2e5df1f`, message `cbea0b76`). The baseline with no id
-  (`app_started`, `app_active`, the connect events; nothing written on the Mac for them) remains only for a
-  shared file that cannot be read, while the switch is on.
+  (`app_started`, `app_active`, the connect events; nothing written on the Mac for them) remained only for a
+  shared file that cannot be read, while the switch is on, until 1.7.2 retired it (B-285, above).
 
 Tests: `B-200: …`, `B-198`'s in `tests/desktop-analytics.test.ts`.
 
@@ -104,11 +129,11 @@ All PassionCode apps share one file:
 - **Created once** by whichever app starts first: written to a temporary file and hard-linked into
   place, which fails if another app created it at the same moment; that file is then read instead
   (*two apps creating the file at the same moment end with one id*).
-- **Never repaired.** A file that does not parse, or whose `id` is not a UUID, is left as it is and
-  analytics stays off (*a broken installation file is never repaired*).
+- **Never repaired.** A file that does not parse, whose `id` is not a UUID or whose `analytics` is not a boolean, is
+  left as it is and nothing is sent while it stays so (B-285).
 - **Unknown fields are kept** when this app rewrites it.
-- **`analytics: false` no longer turns Fabric Inbox off** (B-200: the switch is per product). Fabric Inbox
-  writes nothing to it since 0.87.0, and reads it only once to keep an answer from before 0.84.0.
+- **`analytics: false` turns Fabric Inbox off only as an earlier no** (B-285, UD-2: present before the first send or
+  at the stand-in run, while the person never set this app's switch on). Fabric Inbox writes nothing to it since 0.87.0.
   **About Usage Counts…** in the menu says what is sent.
 
 ## Delivery
@@ -122,7 +147,7 @@ All PassionCode apps share one file:
   server refuses events older than a day). Nothing but the small state file is written to disk, and that only with the details on.
 - **No timer** (lifecycle LC-08): sends happen when something is tracked, and a retry when the
   window comes forward after its wait is over. With no window open nothing is sent.
-- A shared file that cannot be read stops the details only; the baseline with no id goes on.
+- A shared file that cannot be read stops every send of that run (B-285); the next start reads it again.
 - Each send is one `analytics_flush` line on stdout with its outcome and event count.
 
 ## Which builds send

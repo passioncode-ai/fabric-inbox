@@ -5,6 +5,14 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.7.2 (2026-11-15)
+
+**Usage data under the organization's contract** (B-285, fabric-agent-contract DEC-0157). Nothing leaves the Mac before the notice says what is sent; the notice now names the apps that share the installation id (Fabric, Fabric Switchboard, Fabric Dashboards, the PassionCode launcher), what the ids tie together, and that turning it back on resumes the same id, and it is shown again once. A shared "off" set before this app first sent is kept as the person's earlier no, and the menu says so. When the shared settings file cannot be read, nothing is sent and the menu says why (the counts without an id are retired). README no longer says the switch turns every app off. Basis: `tests/desktop-analytics.test.ts`, the [packet](docs/app-store/tasks/2026-11-15-usage-data-dec-0157.md), reviewed by a second model.
+
+**A reply to a hidden message is set in one level** (B-283): a reply whose message waits behind "Show earlier messages" now shows "In reply to". Basis: `tests/thread-quotes.test.ts`.
+
+**No em dash in README and the texts the server shows** (B-265 step 3a): the About panel reads "Fabric Inbox by PassionCode.ai".
+
 ## 1.7.1 (2026-11-15)
 
 **A forward reopened from Drafts keeps its original's files** (B-277, [S09b](docs/ux/plans/2026-11-14-mail-window/S09b-forward-reopen.md), the S09 walk's defect D6). A forward saved to the server and opened where the device had no copy came back as a new message with plain files: a left-out file could not be put back and Retry was gone. The server now keeps the forward's origin beside the draft, in R2 and never in the message, so no send carries it; the draft opens as a forward again, every original not matched to a saved file left out with its reason, none attached by itself. Reviewed by a second model before the build (seven of nine findings taken). Basis: `tests/forward-reopen.test.ts`, `tests/draft-forward-workerd.test.ts`, `tests/draft-forward-gmail.test.ts`.

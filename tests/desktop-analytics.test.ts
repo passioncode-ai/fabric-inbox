@@ -23,7 +23,8 @@ function machine({ answered = true } = {}) {
   const appData = path.join(root, "Application Support");
   const userData = path.join(appData, "Fabric Inbox");
   mkdirSync(userData, { recursive: true });
-  if (answered) writeFileSync(path.join(userData, "analytics-state.json"), JSON.stringify({ disclosedAt: "2026-10-01T00:00:00.000Z" }));
+  // B-285: the current notice (version 2) was shown and a run already read the shared file.
+  if (answered) writeFileSync(path.join(userData, "analytics-state.json"), JSON.stringify({ disclosedAt: "2026-10-01T00:00:00.000Z", noticeVersion: usage.NOTICE_VERSION, sharedChecked: true }));
   return { appData, userData, shared: path.join(appData, "PassionCode", "installation.json") };
 }
 
@@ -57,7 +58,7 @@ test("a build without an App Key sends nothing and never creates the shared file
   const a = usage.createAnalytics({ fs: fsPromises, appData: m.appData, userData: m.userData, bundle: null, fetch: srv.fetch, uuid: randomUUID });
   await a.start({});
   await a.active({ gmail: 1 });
-  assert.deepEqual(a.status(), { available: false, enabled: false, pending: false, sentBefore: false, baseline: false });
+  assert.deepEqual(a.status(), { available: false, enabled: false, pending: false, sentBefore: false, baseline: false, blocked: false, earlierNo: false });
   assert.equal(srv.batches.length, 0);
   assert.equal(existsSync(m.shared), false);
   assert.equal(await a.setEnabled(true), false);
@@ -156,48 +157,84 @@ test("two apps creating the file at the same moment end with one id: the loser r
   assert.equal(JSON.parse(readFileSync(m.shared, "utf8")).id, winner);
 });
 
-test("a broken installation file is never repaired: the id stays off, the baseline without one goes on (B-198)", async () => {
-  for (const text of ["{not json", '{"id":"not-a-uuid","analytics":true}', "[]"]) {
+test("B-285 (DEC-0157 UD-2): a broken installation file is never repaired and holds every send, with nothing sent without an id", async () => {
+  for (const text of ["{not json", '{"id":"not-a-uuid","analytics":true}', "[]", JSON.stringify({ version: 1, id: randomUUID(), analytics: "no" })]) {
     const m = machine();
     mkdirSync(path.dirname(m.shared), { recursive: true });
     writeFileSync(m.shared, text);
     const { a, srv, lines } = client(m);
     await a.start({});
     await a.active({ gmail: 2 });
-    assert.deepEqual(srv.events().map((e) => [e.eventName, e.props.iid, e.props.gmail]), [["app_started", undefined, undefined], ["app_active", undefined, undefined]], text);
+    await a.event("server_connected", { method: "entered" });
+    assert.equal(srv.batches.length, 0, text);
+    assert.equal(a.status().blocked, true);
     assert.equal(readFileSync(m.shared, "utf8"), text, "left as it was");
     assert.equal(lines[0].reason, "installation_unreadable");
     assert.equal(await a.setEnabled(true), false);
   }
 });
 
-test("B-200: another app's shared switch no longer turns this product off; an answer kept before B-198 with it off stays a no, and off sends nothing", async () => {
-  // A fresh install of this app (never shown the notice): another app's off does not stop it.
+test("B-285 (DEC-0157 UD-2): a shared off before the first send is an earlier no; setting this product's switch on ends it without writing the shared file", async () => {
   const fresh = machine({ answered: false });
   mkdirSync(path.dirname(fresh.shared), { recursive: true });
   const id = randomUUID();
   writeFileSync(fresh.shared, JSON.stringify({ version: 1, id, analytics: false, created_at: 1, fabric: true }));
-  const f = client(fresh);
-  await f.a.start({});
-  assert.deepEqual(f.srv.events().map((e) => [e.eventName, e.props.iid]), [["app_installed", id], ["app_started", id]]);
-  assert.deepEqual(JSON.parse(readFileSync(fresh.shared, "utf8")).analytics, false, "the other app's switch is left as it is");
-  // This app answered no before B-198 (disclosedAt kept, the shared switch it wrote is off): still a no.
-  const m = machine();
-  mkdirSync(path.dirname(m.shared), { recursive: true });
-  writeFileSync(m.shared, JSON.stringify({ version: 1, id, analytics: false, created_at: 1, fabric: true }));
-  const { a, srv } = client(m);
+  const { a, srv, lines } = client(fresh);
   await a.start({});
   await a.active({ gmail: 1 });
   await a.event("server_connected", { method: "entered" });
-  assert.equal(srv.batches.length, 0, "off is off: not even the baseline with no id");
-  assert.deepEqual(a.status(), { available: true, enabled: false, pending: false, sentBefore: false, baseline: false });
-  assert.equal(JSON.parse(readFileSync(path.join(m.userData, "analytics-state.json"), "utf8")).declined, true, "the old no is kept as this product's own");
+  assert.equal(srv.batches.length, 0, "an earlier no: nothing is collected or sent");
+  assert.deepEqual([a.status().enabled, a.status().earlierNo, a.status().pending], [false, true, false], "off, why, and no notice that would say it is on");
+  assert.ok(lines.some((l) => l.reason === "earlier_no"));
+  const kept = client(fresh);
+  await kept.a.start({});
+  assert.equal(kept.a.status().earlierNo, true, "kept at the next start");
   assert.equal(await a.setEnabled(true), true);
-  assert.deepEqual(JSON.parse(readFileSync(m.shared, "utf8")).analytics, false, "turning it on here writes nothing shared");
-  await a.active({ gmail: 3 });
-  const after = srv.events();
-  assert.deepEqual(after.map((e) => e.eventName), ["app_installed", "app_started", "app_active"], "turned on: the install and this launch are counted then");
-  assert.ok(after.every((e) => e.props.iid === id));
+  assert.equal(JSON.parse(readFileSync(fresh.shared, "utf8")).analytics, false, "the shared file is not written");
+  assert.equal(a.status().pending, true, "the notice of this version comes before anything is sent");
+  assert.equal(srv.batches.length, 0);
+  await a.noticeShown();
+  assert.deepEqual(srv.events().map((e) => [e.eventName, e.props.iid]), [["app_installed", id], ["app_started", id]]);
+  const later = client(fresh);
+  await later.a.start({});
+  assert.equal(later.a.status().enabled, true, "the person's on holds over the shared off");
+});
+
+test("B-285 (review K-1): a shared off written while the notice held the first send is still an earlier no; after a first send it is not read", async () => {
+  const m = machine({ answered: false });
+  const { a, srv } = client(m);
+  await a.start({});
+  const file = JSON.parse(readFileSync(m.shared, "utf8"));
+  assert.equal(JSON.parse(readFileSync(path.join(m.userData, "analytics-state.json"), "utf8")).sharedChecked ?? false, false, "no send yet, nothing latched");
+  writeFileSync(m.shared, JSON.stringify({ ...file, analytics: false }));
+  await a.noticeShown();
+  assert.equal(srv.batches.length, 0);
+  assert.equal(a.status().earlierNo, true);
+  const sent = machine({ answered: false });
+  const s2 = client(sent);
+  await s2.a.start({});
+  await s2.a.noticeShown();
+  assert.equal(s2.srv.batches.length, 1);
+  assert.equal(JSON.parse(readFileSync(path.join(sent.userData, "analytics-state.json"), "utf8")).sharedChecked, true, "latched by the first send");
+});
+
+test("B-285 (DEC-0157 UD-2): an install that sent before reads the shared file once (the stand-in run); a shared off written after that changes nothing", async () => {
+  const old = machine({ answered: false });
+  writeFileSync(path.join(old.userData, "analytics-state.json"), JSON.stringify({ disclosedAt: "2026-10-01T00:00:00.000Z", installed: true, version: "0.10.0" }));
+  mkdirSync(path.dirname(old.shared), { recursive: true });
+  writeFileSync(old.shared, JSON.stringify({ version: 1, id: randomUUID(), analytics: false, created_at: 1 }));
+  const o = client(old);
+  await o.a.start({});
+  assert.equal(o.a.status().earlierNo, true, "an off present at the stand-in run is the earlier no");
+  assert.equal(o.srv.batches.length, 0);
+  // An install whose stand-in run found no off: a later shared off is another app's switch, not this one's.
+  const m = machine();
+  mkdirSync(path.dirname(m.shared), { recursive: true });
+  const id = randomUUID();
+  writeFileSync(m.shared, JSON.stringify({ version: 1, id, analytics: false, created_at: 1 }));
+  const { a, srv } = client(m);
+  await a.start({});
+  assert.deepEqual(srv.events().map((e) => [e.eventName, e.props.iid]), [["app_installed", id], ["app_started", id]]);
 });
 
 test("turning it off drops everything waiting and sends nothing more (B-200)", async () => {
@@ -345,46 +382,45 @@ test("a development run has its own app name, so its cookie key lives in its own
   assert.match(main, /app\.setName\(app\.isPackaged \? 'Fabric Inbox' : 'Fabric Inbox Development'\);/);
 });
 
-test("B-200: on by default from the first launch, with the notice still to show; Turn Off sends nothing more, and the choice is this product's", async () => {
+test("B-285 (DEC-0157 UD-1): on by default, nothing leaves before the notice; it counts as shown when it opens, then Turn Off sends nothing more", async () => {
   const m = machine({ answered: false });
   const { a, srv, lines } = client(m);
   await a.start({ serverConfigured: true });
-  const file = JSON.parse(readFileSync(m.shared, "utf8"));
-  assert.deepEqual(srv.events().map((e: any) => [e.eventName, e.props.iid]), [["app_installed", file.id], ["app_started", file.id]], "the details start at launch");
-  assert.equal(srv.events()[0].props.first_passioncode_app, true);
-  assert.deepEqual(a.status(), { available: true, enabled: true, pending: true, sentBefore: true, baseline: false }, "the notice is still to show");
+  await a.error("main", "TypeError");
+  assert.equal(srv.batches.length, 0, "collected, not sent");
+  assert.deepEqual([a.status().enabled, a.status().pending], [true, true]);
   assert.ok(lines.some((l) => l.event === "analytics_notice"));
-  assert.equal(a.countsWanted(), true);
   await a.noticeShown();
-  assert.equal(a.status().pending, false);
-  assert.ok(JSON.parse(readFileSync(path.join(m.userData, "analytics-state.json"), "utf8")).disclosedAt, "shown once, kept");
-  // Turn Off: what waits is dropped and nothing more leaves, the baseline included.
+  const file = JSON.parse(readFileSync(m.shared, "utf8"));
+  assert.deepEqual(srv.events().map((e: any) => [e.eventName, e.props.iid]), [["app_installed", file.id], ["app_started", file.id], ["app_error", file.id]], "what waited goes once it was shown");
+  assert.equal(srv.events()[0].props.first_passioncode_app, true);
+  const state = JSON.parse(readFileSync(path.join(m.userData, "analytics-state.json"), "utf8"));
+  assert.deepEqual([!!state.disclosedAt, state.noticeVersion], [true, usage.NOTICE_VERSION]);
   assert.equal(await a.setEnabled(false), true);
   await a.event("server_connected", { method: "entered" });
-  await a.error("main", "TypeError");
   await a.active(null);
-  assert.equal(srv.events().length, 2, "nothing after Turn Off");
+  assert.equal(srv.events().length, 3, "nothing after Turn Off");
   assert.equal(JSON.parse(readFileSync(m.shared, "utf8")).analytics, true, "the shared file is not switched off");
   const later = client(m);
   await later.a.start({});
-  assert.deepEqual(later.a.status(), { available: true, enabled: false, pending: false, sentBefore: true, baseline: false }, "off, and not shown the notice again");
+  assert.deepEqual([later.a.status().enabled, later.a.status().pending], [false, false], "off, and not shown the notice again");
   assert.equal(later.srv.batches.length, 0);
 });
 
-test("B-200: an install from before is on by default and shown the notice once; an unreadable state starts on and shows it again", async () => {
+test("B-285 (DEC-0157 UD-1): an install shown the earlier notice is held until the new one is shown; an unreadable state starts on and held", async () => {
   const m = machine({ answered: false });
-  writeFileSync(path.join(m.userData, "analytics-state.json"), JSON.stringify({ installed: true, version: "0.10.0" }));
+  writeFileSync(path.join(m.userData, "analytics-state.json"), JSON.stringify({ installed: true, version: "0.10.0", disclosedAt: "2026-11-05T00:00:00.000Z" }));
   const { a, srv } = client(m);
   await a.start({});
-  assert.deepEqual(srv.events().map((e: any) => e.eventName), ["app_started"], "no second app_installed");
-  assert.ok(srv.events()[0].props.iid);
+  assert.equal(srv.batches.length, 0, "notice version 1 was shown, not version 2");
   assert.equal(a.status().pending, true);
+  await a.noticeShown();
+  assert.deepEqual(srv.events().map((e: any) => e.eventName), ["app_started"], "no second app_installed");
   const broken = machine({ answered: false });
   writeFileSync(path.join(broken.userData, "analytics-state.json"), "{not json");
   const b = client(broken);
   await b.a.start({});
-  assert.equal(b.a.status().pending, true);
-  assert.equal(b.a.status().enabled, true);
+  assert.deepEqual([b.a.status().pending, b.a.status().enabled, b.srv.batches.length], [true, true, 0]);
 });
 
 test("B-200: an error is counted once per launch by where and code, as a code only, with the details on", async () => {
