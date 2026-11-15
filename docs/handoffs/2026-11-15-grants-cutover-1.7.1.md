@@ -25,10 +25,18 @@ Take the next tasks from the 1.7.0 handoff: the B-246 cut-over due on 2026-11-15
 
 ## Exact next task
 
-Done after this entry was first written: B-283 (#577: nesting over the shown cells; the frame height finding did not
-reproduce in WebKit) and B-265 step 3a (README, the About copyright, server texts; this change).
+Done after this entry was first written, all on 2026-11-15:
+- B-283 (#577), B-265 step 3a (#578) and step 3b (#580): no em dash left in README, the server texts and the current
+  docs DOCMAP lists.
+- **1.7.2** (#579, `19925be8`): B-285, the Mac app's usage data under the contract's DEC-0157 (nothing sent before the
+  notice of version 2, an earlier shared no kept, an unreadable shared file holds every send; the
+  [packet](../app-store/tasks/2026-11-15-usage-data-dec-0157.md), reviewed by a second model). Deployed with
+  `GRANTS_DECIDE=on`: versions `66b586b5`, `3054a8aa`, `7dcf6752`, receipts `linked`, `get_server` 1.7.2 on the two
+  organizations' servers; tag `v1.7.2`, run 43711432478 success, published 12:17 UTC with 20 assets. The contract was
+  told on the board (thread `b17c2f28`).
 
-1. B-265 step 3b: the current docs under `docs/` without an em dash (dated records stay as written).
-2. After 2026-11-20: B-258, read one day of each server's logs as its row says.
-3. The installed app at 1.6.6 holds 1.7.1 staged (its log: `update_check` ready); it installs when the app next quits
-   (the broker did not start it, so `lifecycle.restart` is not ours to call).
+Next:
+1. After 2026-11-20: B-258, read one day of each server's logs as its row says.
+2. Then by priority from the board: B-224 (shortcuts per message), the rest of B-221 (the chat-like conversation).
+3. The installed app on this Mac holds an update staged; it installs when the app next quits (the broker did not start
+   it, so `lifecycle.restart` is not ours to call).
