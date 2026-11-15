@@ -5,14 +5,14 @@ not for what to do next.
 
 | Question | Home (current) |
 |---|---|
-| Where does the next agent start? | [Release entry](app-store/README.md) — its "Exact next task" is the only one |
+| Where does the next agent start? | [Release entry](app-store/README.md); its "Exact next task" is the only one |
 | What is planned, in which order, and what is done? | [Roadmap](app-store/tasks/2026-09-28-roadmap.md) (tracks P, L, W and their statuses) |
 | What did the latest run change and verify? | [Run brief 2026-09-28](app-store/tasks/2026-09-28-agents-triage-run.md) and its [audit](app-store/audit-2026-09-28.md) |
 | How does it work? | [Architecture as built](architecture.md); target proposal: [desktop-mail/architecture.md](desktop-mail/architecture.md) |
 | How is it configured and deployed? | [Setup](desktop-mail/setup.md) (configuration reference, project addresses, agents, deployment order) |
 | How does an agent work with it (MCP)? | [The agent protocol](agents/mcp.md) (connect, levels, two steps, every tool); the skill: `plugins/fabric-inbox/` |
 | Which actions of the desktop app can an agent do, and how? | [Desktop actions and their agent doors](agents/desktop-actions.md) (every menu item, its code and its door: server tool, link, launch flag, profile file or none; gaps in B-236) |
-| How does a coding agent set it up — server, key, MCP registration — with the person only signing in and allowing? | [Set up as a coding agent](agents/onboard.md) (`onboard.mjs`: server, connect, register, prove, status; the launcher's JSON contract) |
+| How does a coding agent set it up (server, key, MCP registration) with the person only signing in and allowing? | [Set up as a coding agent](agents/onboard.md) (`onboard.mjs`: server, connect, register, prove, status; the launcher's JSON contract) |
 | What must the interface do? | [UX scenarios](ux/scenarios.md), [flows](ux/flows.md), [screens](ux/screens.md) |
 | How does it sound? | [Brand pack](brand/README.md); in Russian: [locale](brand/locales/ru.md) and [terminology → Russian](brand/terminology.md#russian-locale-ru); the last review of the Russian copy: [handoff 2026-10-12](handoffs/2026-10-12-russian-copy-pass.md) |
 | What is open outside the roadmap? | [Board](evidence/backlog.md); lessons in [retro](evidence/retro.md) |
@@ -27,13 +27,13 @@ not for what to do next.
 
 ## History (do not follow as instructions)
 
-- `desktop-mail/README.md`, `implementation.md`, `evidence.md`, `brief.md`, `tasks/README.md` —
+- `desktop-mail/README.md`, `implementation.md`, `evidence.md`, `brief.md`, `tasks/README.md`:
   the first implementation (T00–T08, REQ-001–009) at `fe7f2c7`.
-- `desktop-mail/workbench-*.md`, `unified-api.md` — the unified workbench packet.
+- `desktop-mail/workbench-*.md`, `unified-api.md`: the unified workbench packet.
 - `app-store/tasks/{mas,drafts,attachments,attachment-composer,mail-actions}.md` and their
-  `*-report.md` — release packets done before 2026-09-28; commits outside `main` are reachable
+  `*-report.md`: release packets done before 2026-09-28; commits outside `main` are reachable
   through the `archive/*` tags.
-- `app-store/tasks/remaining-features.md` (R1–R8) — superseded by the roadmap: R1/R2 → L1,
+- `app-store/tasks/remaining-features.md` (R1–R8): superseded by the roadmap: R1/R2 → L1,
   R3 → L4, R5 → P2–P4, R7/R8 → W1 and release.
 
 Status authority is the roadmap; the T, REQ and R tables above are frozen.

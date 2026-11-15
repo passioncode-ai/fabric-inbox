@@ -33,12 +33,12 @@ A new user needs nothing but a Cloudflare account (the free plan works) and the 
 
 The same flow updates an existing server in place (menu **Fabric Inbox → Connect Cloudflare
 account…**): only the storage migrations it lacks (a step that would delete or move a class is
-never sent); every setting on the Worker kept — secrets and plain vars such as
-`UNKNOWN_ADDRESS_POLICY` or `GOOGLE_CLIENT_ID` alike, with the values the app sets winning; its
+never sent); every setting on the Worker kept (secrets and plain vars such as
+`UNKNOWN_ADDRESS_POLICY` or `GOOGLE_CLIENT_ID` alike, with the values the app sets winning); its
 Access rules left alone, and a server signed in on its own domain keeps that sign-in. The server
 records its version (`FABRIC_SERVER_VERSION`; `npm run deploy` records it too, a bare `wrangler deploy`
-does not); a server newer than the app — by that version, a prerelease counting below its release, or
-by its storage tag — is refused. A server deployed without a recorded version is checked by its
+does not); a server newer than the app (by that version, a prerelease counting below its release, or
+by its storage tag) is refused. A server deployed without a recorded version is checked by its
 storage tag only. The app only uploads the server built with it (the same version). The
 token is held in the app's memory until the server has it and is never written on the Mac or into a
 log. Mailbox data moves forward by migrations that only add (`workers/durableObject/migrations.ts`,
@@ -69,7 +69,7 @@ organization, a bucket and a workers.dev name could not be exercised on an accou
 3. Give the Worker its Cloudflare token, so **Settings → Domains** can manage your domains: the 13
    permissions in `TOKEN_PERMISSIONS` (`workers/routing/cloudflare-api.ts`, listed on the screen
    and in the app's Create my server). On this machine the Observatory credential door issues it
-   from the stashed admin token into a vault slot, and it goes into the Worker's secret on stdin —
+   from the stashed admin token into a vault slot, and it goes into the Worker's secret on stdin,
    never into a file, an argument or a chat (door presets `fabric-inbox-server` and
    `fabric-inbox-account`, passioncode-ai/project-observatory-dashboard#93):
 
@@ -119,7 +119,7 @@ Every name the Worker reads (`workers/types.ts`). None is in `wrangler.jsonc` (C
 
 | Name | Kind | Needed when | Default | Meaning |
 |---|---|---|---|---|
-| `POLICY_AUD`, `TEAM_DOMAIN` | var on the Worker | always in production | — | Cloudflare Access audience and team URL; requests fail closed without them |
+| `POLICY_AUD`, `TEAM_DOMAIN` | var on the Worker | always in production | none | Cloudflare Access audience and team URL; requests fail closed without them |
 | `DOMAINS` | var on the Worker | optional | empty | domains always served, commas and/or spaces; domains received from **Settings → Domains** or a setup live in R2 `config/domains.json` |
 | `EMAIL_ADDRESSES` | var | optional | `[]` | when non-empty, the only addresses that may have a mailbox; an address outside it is treated as unknown on inbound. A JSON array, a JSON string of one, or a comma-separated list |
 | `UNKNOWN_ADDRESS_POLICY` | var | optional | reject | JSON `{"<domain>":"catch_all:<address>"}`; invalid JSON fails the delivery |
@@ -132,7 +132,7 @@ Every name the Worker reads (`workers/types.ts`). None is in `wrangler.jsonc` (C
 | `GRANTS_DECIDE` | var | optional | off | `on`: the access grants decide every agent key's tools and the mailboxes each call reaches (B-246 W2c); otherwise today's level and accounts decide and the grants only shadow them |
 | `ROLE_GRANTS` | var | optional | off | `on`: a person listed as Architect in Settings → People is one: they read, sort and set up every mailbox, its addresses and agents, and are refused sending, drafts, deleting mail and the server's settings, each change kept in the record (B-246 W4, packet D-3a); otherwise the role cannot be given and a listed architect reaches nothing |
 | `SEND_LIMIT_DAY` | var | optional | 1000 | the most one Gmail, IMAP or Outlook account sends through this server in a rolling day, whoever sends (a person, a rule, an agent, a campaign); no hourly cap; a whole number from 1, at most 100000, anything else reads as 1000 (B-06, B-262). The provider's own cap still applies |
-| `OPENROUTER_API_KEY` | secret | optional | — | Reply agents write on OpenRouter (`REPLY_MODEL`, fallback `REPLY_FALLBACK_MODEL`) and every answer sent without a person is approved by a model of another vendor first; without it, Workers AI writes and a Workers AI model of another vendor checks (B-258) |
+| `OPENROUTER_API_KEY` | secret | optional | none | Reply agents write on OpenRouter (`REPLY_MODEL`, fallback `REPLY_FALLBACK_MODEL`) and every answer sent without a person is approved by a model of another vendor first; without it, Workers AI writes and a Workers AI model of another vendor checks (B-258) |
 | `REPLY_MODEL` / `REPLY_FALLBACK_MODEL` | var | optional | `xiaomi/mimo-v2.6-pro` / `deepseek/deepseek-v4.1-flash` | The reply-lane writer and its fallback (open vendors only) |
 | `REPLY_REASONING` | var | optional | `none` | The writer's reasoning effort on OpenRouter: `none`, `minimal`, `low`, `medium` or `high` (`default`: the provider's own); the fallback keeps its own. `none` because with its own default the writer ran out of its 90 s on 11 of 21 replayed messages and with `none` on 0 (B-174). `preview_agent_answer` takes `reasoning` to try one for a preview only |
 | `AUTOMATION_MODEL` | var | optional | `@cf/meta/llama-4-scout-17b-16e-instruct` | model for rule conditions and rule drafts |
@@ -146,13 +146,13 @@ Every name the Worker reads (`workers/types.ts`). None is in `wrangler.jsonc` (C
 | `RECIPIENT_CHECK_DOMAINS` | var | the recipient check | empty → every domain the server serves (`DOMAINS` and R2 `config/domains.json`) | the domains whose addresses are checked |
 | `AUTOMATION_TOOL_TOKENS` | secret | tools with credentials | `{}` | JSON map credential name → `{ "host": "<tool host>", "token": "<bearer>" }`, a token bound to the one host it is sent to; agents and rules store only the name. A bare string (configured before 2026-10-12) still works for any allowlisted host and logs `tool_token_unbound` |
 | `AUTOMATION_TOOL_TOKEN_<NAME>` | secret, one per credential | tools with credentials | none | one credential `<NAME>` as `{ "host": "<tool host>", "token": "<bearer>" }`, added, rotated or removed alone (`wrangler secret put`) without writing the map again; it replaces a map entry of the same name; a value without its host refuses only the tool that names it (B-264) |
-| `MAIL_CREDENTIAL_KEY` | secret | Gmail, Outlook and IMAP accounts | — | the key every account's token or app password is sealed with: made once by Create my server (and by the Gmail or Outlook setup, or Make the key in Settings, when the server has none), never replaced; see "The credential key" below |
-| `MAIL_CREDENTIAL_KEY_PREVIOUS` | secret | rotating the key | — | older keys, commas or spaces; what they sealed keeps opening and is sealed again with the new key on its next use |
+| `MAIL_CREDENTIAL_KEY` | secret | Gmail, Outlook and IMAP accounts | none | the key every account's token or app password is sealed with: made once by Create my server (and by the Gmail or Outlook setup, or Make the key in Settings, when the server has none), never replaced; see "The credential key" below |
+| `MAIL_CREDENTIAL_KEY_PREVIOUS` | secret | rotating the key | none | older keys, commas or spaces; what they sealed keeps opening and is sealed again with the new key on its next use |
 | `MAIL_POLL_SECONDS` | var | Gmail, Outlook and IMAP accounts | 300 | how often accounts are read, 60–3600 s; `GMAIL_POLL_SECONDS` is read when it is absent |
-| `GOOGLE_CLIENT_ID`, `PUBLIC_APP_URL`, `GMAIL_POLL_SECONDS` | var | Gmail | — / — / 300 | written by the server from Settings → Accounts → Gmail, or by hand; see Gmail below |
-| `GOOGLE_CLIENT_SECRET`, `GMAIL_TOKEN_ENCRYPTION_KEY` | secret | Gmail | — | the same; `GMAIL_TOKEN_ENCRYPTION_KEY` is the credential key's name before 0.11, still read when `MAIL_CREDENTIAL_KEY` is absent; see Gmail below |
-| `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET_EXPIRES` | var | Outlook | — | written by the server from Settings → Accounts → Outlook, or by hand; see Outlook below |
-| `MICROSOFT_CLIENT_SECRET` | secret | Outlook | — | the app registration's client secret Value; see Outlook below |
+| `GOOGLE_CLIENT_ID`, `PUBLIC_APP_URL`, `GMAIL_POLL_SECONDS` | var | Gmail | none / none / 300 | written by the server from Settings → Accounts → Gmail, or by hand; see Gmail below |
+| `GOOGLE_CLIENT_SECRET`, `GMAIL_TOKEN_ENCRYPTION_KEY` | secret | Gmail | none | the same; `GMAIL_TOKEN_ENCRYPTION_KEY` is the credential key's name before 0.11, still read when `MAIL_CREDENTIAL_KEY` is absent; see Gmail below |
+| `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET_EXPIRES` | var | Outlook | none | written by the server from Settings → Accounts → Outlook, or by hand; see Outlook below |
+| `MICROSOFT_CLIENT_SECRET` | secret | Outlook | none | the app registration's client secret Value; see Outlook below |
 
 Bindings in `wrangler.jsonc`: `BUCKET` (R2), `AI` (Workers AI), `EMAIL` (send_email), Durable Objects `MAILBOX`, `AUTOMATIONS`, `GMAIL_ACCOUNTS`, `AGENT_REGISTRY`, `KNOWLEDGE`, `CATEGORIES`, `EMAIL_AGENT`, `EMAIL_MCP`. Migrations: `fabric-v2` adds `AgentRegistryDO`, `fabric-v3` `KnowledgeDO`, `fabric-v4` `CategoriesDO`.
 
@@ -186,7 +186,7 @@ server's address and Access sign-in, the served domains, the mailboxes (address,
   them, keeping each copy.
 
 No deployment's own data ships or is committed (CF-4): a deployment's values, setup, Email
-Routing inventory and ops receipts live in `deployments/<name>/` on its owner's machine only —
+Routing inventory and ops receipts live in `deployments/<name>/` on its owner's machine only;
 the directory is git-ignored, and the repository carries only [its guide](../../deployments/README.md)
 and the placeholder `deployments/*.example.json`. `tests/no-owner-data.test.ts` reads each local
 `deployment.json` and `setup.json` and fails if one of their identifiers appears in `app/`,
@@ -214,7 +214,7 @@ lists every domain of the connected account. Receiving here first:
   read, in words.
 - **Add address** (Settings → Addresses, a domain's **Add an address on <domain>**, the sidebar, or
   an empty list) opens one dialog: the name before @ with the domain beside it (receiving here
-  first, then — with a token — the domains that can receive here), checked as you type (allowed
+  first, then, with a token, the domains that can receive here), checked as you type (allowed
   characters; already an address here; a Cloudflare rule that sends it elsewhere, named; the
   catch-all that keeps its mail today), the display name, a signature, who answers, a copy to a
   confirmed forwarding destination, the Cloudflare rule, and **Send a test message**. **Several**
@@ -230,8 +230,8 @@ lists every domain of the connected account. Receiving here first:
   an address.
   **Change** next to the copy picks another destination or none.
 - **Remove…** deletes the address's rule, then the mailbox and its mail, after a confirmation, and
-  says what Cloudflare now does with its mail. The domain's catch-all mailbox — chosen here or set by
-  `UNKNOWN_ADDRESS_POLICY` — cannot be removed until another one (or none) is chosen. The
+  says what Cloudflare now does with its mail. The domain's catch-all mailbox (chosen here or set by
+  `UNKNOWN_ADDRESS_POLICY`) cannot be removed until another one (or none) is chosen. The
   **Mailboxes** screen creates and removes through the same steps.
 - **Mail for an address that does not exist**: refuse it (the sender is told; each one is listed
   with **Use this name**) or keep it in one of the domain's addresses, then **Apply** (Cloudflare's
@@ -256,7 +256,7 @@ Cloudflare routes to the Worker.
 
 ## Agents
 
-Create agents on **Settings → Agents** (`/settings/agents`; **New agent**): from the Support, Sales or Billing template or blank. A new agent drafts every answer. **Send answers it is allowed to send** turns on sending for the intents listed (empty = any grounded answer), within the daily limit per address; everything else becomes a draft with its reason. Skipped before any model call: mail with `List-*`, `Precedence: bulk|list` or `Auto-Submitted`, no-reply senders, bounces, calendar invitations and replies, mail from any address on a domain this server serves (so two agent addresses never answer each other), and a message you already replied to yourself. When a message has `Reply-To`, that is the address answered and checked. Answers carry `Auto-Submitted: auto-replied`, the address's display name and its signature. The daily send limit counts per UTC day; left empty, the agent has no limit (operator, 2026-10-13: agents have no limits unless one is set) — over MCP `save_agent` that is `dailySendLimit: null`, and left out it is 20. **Recent answers** filters by what happened (sent or drafted, needs a look, left alone) and by agent, and pages with **Show older**; **Open the draft** opens that draft. Tools are remote MCP tools on `AUTOMATION_MCP_HOSTS`; a failed tool call turns the answer into a draft. Every run, with the version that answered, the passages it was given and exactly what was sent, is listed under **Recent answers**.
+Create agents on **Settings → Agents** (`/settings/agents`; **New agent**): from the Support, Sales or Billing template or blank. A new agent drafts every answer. **Send answers it is allowed to send** turns on sending for the intents listed (empty = any grounded answer), within the daily limit per address; everything else becomes a draft with its reason. Skipped before any model call: mail with `List-*`, `Precedence: bulk|list` or `Auto-Submitted`, no-reply senders, bounces, calendar invitations and replies, mail from any address on a domain this server serves (so two agent addresses never answer each other), and a message you already replied to yourself. When a message has `Reply-To`, that is the address answered and checked. Answers carry `Auto-Submitted: auto-replied`, the address's display name and its signature. The daily send limit counts per UTC day; left empty, the agent has no limit (operator, 2026-10-13: agents have no limits unless one is set); over MCP `save_agent` that is `dailySendLimit: null`, and left out it is 20. **Recent answers** filters by what happened (sent or drafted, needs a look, left alone) and by agent, and pages with **Show older**; **Open the draft** opens that draft. Tools are remote MCP tools on `AUTOMATION_MCP_HOSTS`; a failed tool call turns the answer into a draft. Every run, with the version that answered, the passages it was given and exactly what was sent, is listed under **Recent answers**.
 
 ## Knowledge for agents
 
@@ -313,7 +313,7 @@ Discard rules) or a Never spam list. Discarded mail is deleted after 30 days; in
 Outlook accounts it is moved to the account's Trash then (an IMAP server with no Trash folder: deleted for good). Where Discarded lives: a folder of each
 Cloudflare address; Gmail's own label "Discarded" (made the first time); a top-level folder named
 Discarded in IMAP and Outlook accounts (made the first time; an IMAP server that does not let apps
-create folders says so — create a folder named Discarded there, and it is used). Nothing to set up:
+create folders says so: create a folder named Discarded there, and it is used). Nothing to set up:
 the rules live in the server's bucket (`config/discard.json`). A model's one-line guess at why a rule
 was learned is added when the server has Workers AI.
 
@@ -337,15 +337,15 @@ aside after 10 attempts.
 ## Agent access (outside agents over MCP)
 
 **Agent access** (`/agent-access`, in the sidebar) gives an AI agent you run elsewhere its own key
-to `https://<server>/mcp`. Choose a level — **Read** (reads and searches, changes nothing),
-**Mail** (also drafts, moves, marks, reports spam) or **Admin** (everything the app does) — and for
+to `https://<server>/mcp`. Choose a level: **Read** (reads and searches, changes nothing),
+**Mail** (also drafts, moves, marks, reports spam) or **Admin** (everything the app does); and for
 Mail or Admin **Drafts only** or **Can send** with a number a day; the key expires after 30 days,
 90 days or a year. The Client Secret is shown once with a ready `claude mcp add` command and a JSON
 entry for other clients. **Revoke…** stops a key at once. **What agents changed** lists every change
 made through the protocol.
 
-The server's Cloudflare token needs **Access: Service Tokens — Edit** and **Access: Apps and
-Policies — Edit** for this (both are in the token list the app shows). A key is a Cloudflare Access
+The server's Cloudflare token needs **Access: Service Tokens (Edit)** and **Access: Apps and
+Policies (Edit)** for this (both are in the token list the app shows). A key is a Cloudflare Access
 service token let through by one Service Auth policy named `Fabric Inbox agents <aud>` on the
 server's own Access application; the application's other policies are left as they are. What
 agents can do, and the rule that keeps it complete: [docs/agents/mcp.md](../agents/mcp.md).
@@ -551,12 +551,12 @@ names, and every value comes with a Copy button, computed from the address the a
 **Human steps (Google Cloud, once per server).** Only the Google account's owner can do these; no
 API makes a Google Cloud OAuth client on their behalf.
 
-1. **Create a project** — [New project](https://console.cloud.google.com/projectcreate).
-2. **Turn on the Gmail API** — [Gmail API](https://console.cloud.google.com/apis/library/gmail.googleapis.com) → Enable, with the new project selected.
-3. **Branding** — [Branding](https://console.cloud.google.com/auth/branding): app name `Fabric Inbox`, your email as the support email, and under Authorized domains the server's registrable domain (`<name>.workers.dev` for `fabric-inbox.<name>.workers.dev`).
-4. **Audience** — [Audience](https://console.cloud.google.com/auth/audience): **Internal** for a Google Workspace account; **External** then **Publish app** for a personal one. Not Testing: Google gives a Testing app's grant 7 days ("A Google Cloud Platform project with an OAuth consent screen configured for an external user type and a publishing status of 'Testing' is issued a refresh token expiring in 7 days", [Google](https://developers.google.com/identity/protocols/oauth2#expiration)), so the account would need reconnecting every week. Your own app with fewer than 100 users needs no verification ([Google](https://support.google.com/cloud/answer/13464323)); Google shows "Google hasn't verified this app" once, and Advanced → continue goes on.
-5. **Data Access** — [Data Access](https://console.cloud.google.com/auth/scopes): add `https://www.googleapis.com/auth/gmail.modify` by hand. Google classes it as restricted ([Google](https://developers.google.com/workspace/gmail/api/auth/scopes)); that requires verification only for an app published to the public.
-6. **Client** — [Create client](https://console.cloud.google.com/auth/clients/create): type Web application, Authorized redirect URI `<server origin>/api/accounts/gmail/callback`.
+1. **Create a project**: [New project](https://console.cloud.google.com/projectcreate).
+2. **Turn on the Gmail API**: [Gmail API](https://console.cloud.google.com/apis/library/gmail.googleapis.com) → Enable, with the new project selected.
+3. **Branding**: [Branding](https://console.cloud.google.com/auth/branding): app name `Fabric Inbox`, your email as the support email, and under Authorized domains the server's registrable domain (`<name>.workers.dev` for `fabric-inbox.<name>.workers.dev`).
+4. **Audience**: [Audience](https://console.cloud.google.com/auth/audience): **Internal** for a Google Workspace account; **External** then **Publish app** for a personal one. Not Testing: Google gives a Testing app's grant 7 days ("A Google Cloud Platform project with an OAuth consent screen configured for an external user type and a publishing status of 'Testing' is issued a refresh token expiring in 7 days", [Google](https://developers.google.com/identity/protocols/oauth2#expiration)), so the account would need reconnecting every week. Your own app with fewer than 100 users needs no verification ([Google](https://support.google.com/cloud/answer/13464323)); Google shows "Google hasn't verified this app" once, and Advanced → continue goes on.
+5. **Data Access**: [Data Access](https://console.cloud.google.com/auth/scopes): add `https://www.googleapis.com/auth/gmail.modify` by hand. Google classes it as restricted ([Google](https://developers.google.com/workspace/gmail/api/auth/scopes)); that requires verification only for an app published to the public.
+6. **Client**: [Create client](https://console.cloud.google.com/auth/clients/create): type Web application, Authorized redirect URI `<server origin>/api/accounts/gmail/callback`.
 7. **Paste the client ID and secret into the app**, then **Save and check**.
 
 **What the server does with them** (`workers/routes/gmail-setup.ts`). It checks the pair with
@@ -571,10 +571,10 @@ binding is carried over as `inherit` (`workers/gmail-setup/server-settings.ts`).
 the permission is named and nothing changes. A redirect URI Google does not know yet does not block
 the save; it is reported, since Google can take minutes to apply one just added.
 
-**Self-test** — **Check the setup** in the connect step, `GET /api/gmail-setup/check`, tool
+**Self-test**: **Check the setup** in the connect step, `GET /api/gmail-setup/check`, tool
 `check_gmail_setup` (`workers/gmail-setup/google-check.ts`): the token endpoint accepts the client;
 Google knows the redirect URI (read from Google's sign-in page without following it: a known pair
-is redirected to sign-in, a problem to Google's error page whose `authError` names it — Google's
+is redirected to sign-in, a problem to Google's error page whose `authError` names it; it is Google's
 interface, not a documented API, so an unreadable answer is "Not checked", never OK); and the app is
 open at the address Gmail was set up for. `GET /api/gmail-setup` (tool `gmail_setup_status`) answers
 what is missing and the values to copy; the secret is never returned. `PUT /api/gmail-setup` has no
@@ -588,7 +588,7 @@ For a server without its own Cloudflare token, set the same values with wrangler
 |---|---|---|
 | `GOOGLE_CLIENT_ID` | var | OAuth web application client ID |
 | `GOOGLE_CLIENT_SECRET` | secret | OAuth client secret, server only |
-| `MAIL_CREDENTIAL_KEY` (or, before 0.11, `GMAIL_TOKEN_ENCRYPTION_KEY`) | secret | Base64url-encoded 32-byte AES-GCM key (`openssl rand -base64 32 \| tr '+/' '-_' \| tr -d '='`); back it up before connecting accounts — a lost key makes every account reconnect (see "The credential key") |
+| `MAIL_CREDENTIAL_KEY` (or, before 0.11, `GMAIL_TOKEN_ENCRYPTION_KEY`) | secret | Base64url-encoded 32-byte AES-GCM key (`openssl rand -base64 32 \| tr '+/' '-_' \| tr -d '='`); back it up before connecting accounts: a lost key makes every account reconnect (see "The credential key") |
 | `PUBLIC_APP_URL` | var | Exact HTTPS application origin; no path/query/credentials |
 | `GMAIL_POLL_SECONDS` | var | Optional poll interval, default 300 seconds; clamped to 60–3600. While an import or a history page is unfinished the next sync is 10 s away instead; a new account syncs at once, and Check for new mail reads Gmail on demand ([architecture](../architecture.md#gmail-sync-cache-and-refresh)) |
 
@@ -655,7 +655,7 @@ Microsoft's own pages on 2026-10-06.
    (Outlook.com, Hotmail), make a [free Azure account](https://azure.microsoft.com/pricing/purchase-options/azure-account)
    first: it gives the personal account a directory ("An Azure account that has an active
    subscription", [Microsoft](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app)).
-2. **Open App registrations** — sign in to the [Microsoft Entra admin center](https://entra.microsoft.com),
+2. **Open App registrations**: sign in to the [Microsoft Entra admin center](https://entra.microsoft.com),
    **Entra ID → App registrations → New registration** ([App registrations](https://go.microsoft.com/fwlink/?linkid=2083908)).
 3. **Register the app.** Name `Fabric Inbox`. Supported account types: **Any Entra ID Tenant +
    Personal Microsoft accounts** (both personal and work or school accounts can then connect; the
@@ -671,7 +671,7 @@ Microsoft's own pages on 2026-10-06.
 6. **Certificates & secrets → Client secrets → New client secret.** A description, then an
    expiry: at most 24 months; Microsoft recommends less than 12
    ([Microsoft](https://learn.microsoft.com/en-us/entra/identity-platform/how-to-add-credentials)).
-   **Add**, then copy the secret's **Value** — not the Secret ID — at once ("This secret value is
+   **Add**, then copy the secret's **Value** (not the Secret ID) at once ("This secret value is
    never displayed again after you leave this page"), and note the date in its **Expires** column.
 7. **Paste the client ID, the secret's Value and its Expires date into the app**, then **Save**.
 8. **Connect an account** (below). Its first sign-in is what proves the client ID and secret.
@@ -680,9 +680,9 @@ Microsoft's own pages on 2026-10-06.
    then delete the old one in Microsoft Entra. Connected accounts keep working; none needs a
    reconnect.
 
-**What the server does with them** (`workers/routes/microsoft-setup.ts`). It checks their shape — a
+**What the server does with them** (`workers/routes/microsoft-setup.ts`). It checks their shape (a
 client ID is a GUID; a pasted Secret ID (also a GUID) is refused with "copy the Value"; the date is
-in the future and within 24 months — and refuses what cannot work, with nothing written. It makes
+in the future and within 24 months) and refuses what cannot work, with nothing written. It makes
 a credential key only when it has none (never replacing one), then writes `MICROSOFT_CLIENT_ID`,
 `MICROSOFT_CLIENT_SECRET_EXPIRES` and `PUBLIC_APP_URL` (vars) and `MICROSOFT_CLIENT_SECRET` and the
 key (secrets) in one change to its own Worker settings, with its own token (the writer the Gmail
@@ -691,10 +691,10 @@ is inherited). It cannot ask Microsoft beforehand whether the client ID and secr
 Microsoft's token endpoint checks a sign-in code's shape before the client, so a made-up code is
 refused (`invalid_grant`, AADSTS9002313) whatever the client and secret (observed 2026-10-06).
 
-**Self-test** — **Check the setup** in the connect step, `GET /api/microsoft-setup/check`, tool
+**Self-test**: **Check the setup** in the connect step, `GET /api/microsoft-setup/check`, tool
 `check_microsoft_setup`: the app is open at the address Outlook was set up for; the client secret's
 end date (failed when it has passed or is within 30 days); and, once an Outlook account is
-connected, one account's access renewed now — Microsoft does that only for a client ID and secret it
+connected, one account's access renewed now; Microsoft does that only for a client ID and secret it
 accepts, and an expired secret answers `invalid_client` with AADSTS7000222. `GET /api/microsoft-setup`
 (tool `microsoft_setup_status`) answers what is missing, the values to copy, the secret's end date,
 and the administrator's approval link; the secret is never returned. `PUT /api/microsoft-setup` has
@@ -723,12 +723,12 @@ authorization code flow with PKCE (S256) on `https://login.microsoftonline.com/c
 ([Microsoft](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow)).
 Back at `/api/accounts/outlook/callback`, the server redeems the code with the PKCE verifier and
 the client secret, reads the address (`GET /me`: `mail`, else `userPrincipalName`) and the
-account's folders — which proves Graph reaches a mailbox — and keeps the tokens sealed. The browser
+account's folders (which proves Graph reaches a mailbox) and keeps the tokens sealed. The browser
 ends on a page for every outcome (`workers/microsoft-setup/result-page.ts`): connected; Cancel on
 Microsoft's page; **an organization that lets only administrators allow apps** (SCN-059: the page
-gives the link the person sends to an administrator —
+gives the link the person sends to an administrator,
 `https://login.microsoftonline.com/organizations/v2.0/adminconsent?client_id=…&scope=…&redirect_uri=…`
-([Microsoft](https://learn.microsoft.com/en-us/entra/identity-platform/v2-admin-consent)) — and the
+([Microsoft](https://learn.microsoft.com/en-us/entra/identity-platform/v2-admin-consent)), and the
 administrator's return lands on "Your organization allows Fabric Inbox now", storing nothing); an
 unknown redirect URI; an expired (AADSTS7000222) or refused client secret; an account type the app
 registration does not accept; an unfinished sign-in step; a permission not given; a Microsoft account
@@ -780,7 +780,7 @@ Mac (no Keychain item): operator decision 2026-10-05/06.
 | GMX (gmx.com) | imap.gmx.com:993 | mail.gmx.com:465 | appended | [GMX](https://support.gmx.com/pop-imap/imap/server.html) | [switch IMAP on](https://support.gmx.com/pop-imap/toggle.html) |
 | GMX (gmx.net, gmx.de) | imap.gmx.net:993 | mail.gmx.net:465 | appended | [GMX](https://hilfe.gmx.net/pop-imap/imap/imap-serverdaten.html) | [switch IMAP on](https://hilfe.gmx.net/pop-imap/einschalten.html) |
 | Gmail with an app password | imap.gmail.com:993 | smtp.gmail.com:465 | kept by Gmail ([Google](https://support.google.com/mail/answer/78892)) | [Google](https://developers.google.com/workspace/gmail/imap/imap-smtp) | [Google](https://support.google.com/accounts/answer/185833) |
-| Other | the server the provider names, SSL/TLS (993) | 465 SSL/TLS or 587 STARTTLS | appended | — | — |
+| Other | the server the provider names, SSL/TLS (993) | 465 SSL/TLS or 587 STARTTLS | appended | n/a | n/a |
 
 Every server was read from the page linked, on 2026-10-06, and reached from the built Worker in
 workerd the same day: each IMAP server and each SMTP server refused a made-up account's sign-in
@@ -802,7 +802,7 @@ Mail, so an archived message leaves the app's lists.
 
 ## The credential key
 
-Every account's secret — a Gmail or Outlook refresh token, an IMAP app password — is sealed with
+Every account's secret (a Gmail or Outlook refresh token, an IMAP app password) is sealed with
 `MAIL_CREDENTIAL_KEY` (AES-256-GCM, bound to its account) and kept only on your server
 (`workers/providers/credentials.ts`). Create my server makes the key the first time and never sends
 it again; the app keeps no copy, so the key exists only as a Worker secret, which Cloudflare does
@@ -822,7 +822,7 @@ not show again.
   manager, then set it: `openssl rand -base64 32 | tr '+/' '-_' | tr -d '=' > key.txt`, then
   `npx wrangler secret put MAIL_CREDENTIAL_KEY < key.txt` and delete `key.txt`. A key made by the
   Mac app cannot be read back; losing it (deleting the Worker) means entering each app password
-  again and reconnecting each Gmail and Outlook account — no mail is lost, it stays at the providers.
+  again and reconnecting each Gmail and Outlook account; no mail is lost, it stays at the providers.
 - **Rotation.** Set the new key as `MAIL_CREDENTIAL_KEY` and the old one in
   `MAIL_CREDENTIAL_KEY_PREVIOUS`; each account is sealed again with the new key on its next sync
   (within the poll interval, default 5 minutes), after which the old key can be removed.
@@ -838,6 +838,6 @@ Cloudflare Access email-code authentication can remain inside the app when its e
 
 `AUTOMATION_MCP_HOSTS` is a comma-separated list of exact permitted public HTTPS hosts. An empty list denies MCP rule creation. `AUTOMATION_TOOL_TOKENS` is an optional server secret containing a JSON map from credential names to `{ "host", "token" }`: each token is sent only to its own host, so a grant cannot carry one service's token to another allowlisted host (`tokenFor` in `workers/automation/mcp.ts`). Rules and agents store only the name (`tokenRef`), not its value. A credential can also be its own secret, `AUTOMATION_TOOL_TOKEN_<NAME>` with one `{ "host", "token" }` (`readToolTokens` in the same file): the map cannot be read back, so adding an entry to it means writing every entry again, while an own secret is added alone and replaces a map entry of the same name. Set these via the Cloudflare secret/configuration mechanism; no production token example is included here.
 
-Tools use Streamable HTTP. Endpoint redirects, loopback/numeric addresses and unapproved hosts are rejected. The configured hostname is an administrator trust boundary; this is not a general DNS-rebinding firewall. Template string values may include `{{email.id}}`, `{{email.sender}}`, `{{email.subject}}`, `{{email.body}}` and `{{email.preview}}` (the first 300 characters as plain text — what a signal to the operator's signal API carries instead of the whole message). Body substitution is bounded to 16,000 characters, total resolved arguments to 32 KB. Email cannot choose argument keys, endpoint or tool (`workers/automation/policy.ts`). Approval stores the resolved action and binds it to the message digest.
+Tools use Streamable HTTP. Endpoint redirects, loopback/numeric addresses and unapproved hosts are rejected. The configured hostname is an administrator trust boundary; this is not a general DNS-rebinding firewall. Template string values may include `{{email.id}}`, `{{email.sender}}`, `{{email.subject}}`, `{{email.body}}` and `{{email.preview}}` (the first 300 characters as plain text: what a signal to the operator's signal API carries instead of the whole message). Body substitution is bounded to 16,000 characters, total resolved arguments to 32 KB. Email cannot choose argument keys, endpoint or tool (`workers/automation/policy.ts`). Approval stores the resolved action and binds it to the message digest.
 
 No local MCP server or machine gateway configuration is installed by this repository. Device execution is not implemented. Use a controlled mock/read-only tool for acceptance before enabling an automatic side effect.
