@@ -163,11 +163,11 @@ const MAP: Record<string, Record<string, Record<string, string> & { via?: string
   request_access: { "POST /api/access-requests": { board: `${BY_TOOL}: the board path names it, not the tool` } },
   save_draft: {
     "PUT /api/v1/mailboxes/:mailboxId/drafts/:id": { body: "text", in_reply_to: "replyToMessageId", thread_id: `${BY_TOOL}: the conversation of the message it answers`,
-      keep_attachments: "keepAttachments", expected_revision: "expectedRevision" },
+      keep_attachments: "keepAttachments", expected_revision: "expectedRevision", forward: "not offered: the app's own record of a forward's original files (B-277); a save without it leaves it as it was" },
     "POST /api/accounts/:accountId/drafts": { threadId: `${BY_TOOL}: from replyToMessageId`, inReplyTo: `${BY_TOOL}: from replyToMessageId`,
       references: `${BY_TOOL}: from replyToMessageId`, from: `${BY_TOOL}: Gmail sends as the account itself` },
     "PUT /api/accounts/:accountId/drafts/:draftId": { threadId: `${BY_TOOL}: the draft's own or replyToMessageId's`, inReplyTo: `${BY_TOOL}: the draft's own or replyToMessageId's`,
-      references: `${BY_TOOL}: the draft's own or replyToMessageId's` },
+      references: `${BY_TOOL}: the draft's own or replyToMessageId's`, forward: "not offered: the app's own record of a forward's original files (B-277); a save without it leaves it as it was" },
   },
   send_draft: { "POST /api/v1/mailboxes/:mailboxId/drafts/:id/send": { expected_revision: "expectedRevision" } },
   send_email: {

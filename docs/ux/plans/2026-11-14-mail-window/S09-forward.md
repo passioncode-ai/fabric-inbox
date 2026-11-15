@@ -58,7 +58,7 @@ Walked as a code read of the forward and send path, not in WebKit (see "Built as
 | D3 | More than 10 files or 5 MiB of originals: the whole include is refused by the bound, so such a forward could never be sent | `attachment-store.ts:37`, `:59` (called from `includeOriginals`) | Fixed: planned in order while they fit, the rest left out as did not fit |
 | D4 | One original failing to load leaves every later one unloaded (the capture loop stops at the first failure) | `attachment-store.ts:184-193` | Fixed: originals are captured one at a time; each failure has Retry and Remove |
 | D5 | The forwarded original shows inside the attachments section, after the files | `Composer.tsx:574` | Fixed: after the text, before the files |
-| D6 | A forward reopened from Drafts comes back as a new message with no `forwardSource`: its eyebrow says "New message" and its originals are plain saved files (no Retry, no Attach for a left-out file) | `server-drafts.ts:248`, `:255` | Open: the server draft keeps no forward source; for the W4 audit's board |
+| D6 | A forward reopened from Drafts comes back as a new message with no `forwardSource`: its eyebrow says "New message" and its originals are plain saved files (no Retry, no Attach for a left-out file) | `server-drafts.ts:248`, `:255` | Fixed 2026-11-15 (B-277, [S09b](S09b-forward-reopen.md)): the server keeps the forward's origin beside the draft |
 
 ## Built as (2026-11-14)
 

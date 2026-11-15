@@ -3,6 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import { restoreCategories } from "./categories/restore";
+import { FORWARD_META_MAX, forwardKey, readForward, removeForward, storeForward, validForward } from "./lib/draft-forward";
 import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import PostalMime from "postal-mime";
@@ -227,6 +228,7 @@ app.post("/api/v1/mailboxes/:mailboxId/drafts", async (c: AppContext) => {
 	if (previous) {
 		// B-15 (2): the replaced draft's files go with it.
 		const files = (await stub.deleteEmail(previous.id)) as { id: string; filename: string }[] | null;
+		await removeForward(c.env.BUCKET, forwardKey({ mailbox: mailboxId }, previous.id), "draft_replace");
 		if (files?.length) await c.env.BUCKET.delete(files.map((a) => `attachments/${previous.id}/${a.id}/${a.filename}`))
 			.catch((error: unknown) => console.warn(JSON.stringify({ event: "draft_cleanup_failed", error: (error as Error).message })));
 	}
@@ -252,6 +254,8 @@ export const DraftSaveBody = z.object({
 	keep_attachments: z.array(z.string().max(300)).max(MAX_ATTACHMENTS).optional(),
 	/** The revision this writer read; absent overwrites whatever is there. 0 means "a new draft". */
 	expected_revision: z.number().int().min(0).optional(),
+	/** B-277: a forward's origin, as the app writes it; kept beside the draft, never in the message. Absent leaves it as it was. */
+	forward: z.string().max(FORWARD_META_MAX).optional(),
 }).strict();
 /** POST /drafts/:id/send. */
 export const DraftSendBody = z.object({ idempotencyKey: z.string().min(1).max(200), expected_revision: z.number().int().min(1).optional() }).strict();
@@ -267,7 +271,7 @@ app.get("/api/v1/mailboxes/:mailboxId/drafts", async (c: AppContext) => c.json({
 app.get("/api/v1/mailboxes/:mailboxId/drafts/:id", async (c: AppContext) => {
 	const draft = await c.var.mailboxStub.getEmail(c.req.param("id")!);
 	if (!draft || draft.folder_id !== Folders.DRAFT) return c.json({ error: msg("The draft is not here any more."), code: "draft_not_found" }, 404);
-	return c.json(draftAnswer(draft));
+	return c.json({ ...draftAnswer(draft), forward: await readForward(c.env.BUCKET, forwardKey({ mailbox: c.req.param("mailboxId")! }, draft.id)) });
 });
 
 app.put("/api/v1/mailboxes/:mailboxId/drafts/:id", async (c: AppContext) => {
@@ -277,6 +281,7 @@ app.put("/api/v1/mailboxes/:mailboxId/drafts/:id", async (c: AppContext) => {
 	const parsed = DraftSaveBody.safeParse(await c.req.json().catch(() => null));
 	if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "Invalid draft" }, 400);
 	const input = parsed.data;
+	if (input.forward !== undefined && !validForward(input.forward)) return c.json({ error: "The forward's origin is not a JSON object within the limit", code: "invalid_forward" }, 400);
 	let files: ReturnType<typeof validateAttachments>;
 	try { files = validateAttachments(input.attachments); }
 	catch (error) {
@@ -305,7 +310,8 @@ app.put("/api/v1/mailboxes/:mailboxId/drafts/:id", async (c: AppContext) => {
 		return c.json({ error: message, code: result.code === "conflict" ? "draft_conflict" : result.code === "gone" ? "draft_gone" : "not_a_draft",
 			...(result.revision ? { revision: result.revision } : {}) }, 409);
 	}
-	console.log(JSON.stringify({ event: "draft_saved", created: result.created, revision: result.draft.revision, files: result.draft.attachments.length }));
+	await storeForward(c.env.BUCKET, forwardKey({ mailbox: mailboxId }, id), input.forward, "draft_save", { revision: result.draft.revision });
+	console.log(JSON.stringify({ event: "draft_saved", created: result.created, revision: result.draft.revision, files: result.draft.attachments.length, forward: !!input.forward }));
 	return c.json(result.draft, result.created ? 201 : 200);
 });
 
@@ -313,6 +319,7 @@ app.delete("/api/v1/mailboxes/:mailboxId/drafts/:id", async (c: AppContext) => {
 	const id = c.req.param("id")!;
 	const attachments = await c.var.mailboxStub.deleteDraft(id);
 	if (attachments === null) return c.json({ error: msg("The draft is not here any more."), code: "draft_not_found" }, 404);
+	await removeForward(c.env.BUCKET, forwardKey({ mailbox: c.req.param("mailboxId")! }, id), "draft_delete");
 	if (attachments.length) await c.env.BUCKET.delete(attachments.map((a: { id: string; filename: string }) => `attachments/${id}/${a.id}/${a.filename}`))
 		.catch((error: unknown) => console.warn(JSON.stringify({ event: "draft_cleanup_failed", error: (error as Error).message })));
 	return c.body(null, 204);
@@ -335,6 +342,7 @@ app.post("/api/v1/mailboxes/:mailboxId/drafts/:id/send", async (c: AppContext) =
 	}
 	if (result.status === "unknown") return c.json({ ...result, error: "Send outcome is unknown; do not resend automatically" }, 409);
 	if (result.status === "failed") return c.json({ ...result, error: "Email was not accepted by the transport" }, result.errorCode === "RATE_LIMIT" ? 429 : 502);
+	if (result.status === "accepted") await removeForward(c.env.BUCKET, forwardKey({ mailbox: mailboxId }, c.req.param("id")!), "draft_send");
 	return c.json(result, result.status === "accepted" ? 200 : 202);
 });
 

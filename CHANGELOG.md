@@ -5,6 +5,12 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## 1.7.1 (2026-11-15)
+
+**A forward reopened from Drafts keeps its original's files** (B-277, [S09b](docs/ux/plans/2026-11-14-mail-window/S09b-forward-reopen.md), the S09 walk's defect D6). A forward saved to the server and opened where the device had no copy came back as a new message with plain files: a left-out file could not be put back and Retry was gone. The server now keeps the forward's origin beside the draft, in R2 and never in the message, so no send carries it; the draft opens as a forward again, every original not matched to a saved file left out with its reason, none attached by itself. Reviewed by a second model before the build (seven of nine findings taken). Basis: `tests/forward-reopen.test.ts`, `tests/draft-forward-workerd.test.ts`, `tests/draft-forward-gmail.test.ts`.
+
+**Access grants now decide agent keys on the three servers** (B-246 cut-over, operator 2026-11-13). After 60 hours of logs with no disagreement between the grants and the old checks, `GRANTS_DECIDE=on` was set on the owner's server and two organizations' servers; the same proving calls answered the same before and after. Basis: the board row's log counts and deployment versions.
+
 ## 1.7.0 (2026-11-14)
 
 **The mail window, reworked from the operator's notes** (plan `docs/ux/plans/2026-11-14-mail-window/`, S01 to S11; audit `docs/reports/2026-11-14-mail-window-audit/`). Every item below went through its own spec, a second-model review and a walk in WebKit.

@@ -3,6 +3,7 @@ import { msg } from "../../shared/i18n";
 import { fileColour, servedAs, type SafetyStore } from "../safety/download";
 import { remoteCategoryKeys, restoreCategories } from "../categories/restore";
 import { MAX_SEND_REQUEST_BYTES } from '../../shared/mail/attachments';
+import { FORWARD_META_MAX, forwardKey, readForward, removeForward, storeForward, validForward } from "../lib/draft-forward";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
@@ -529,7 +530,12 @@ accountsRouter.post("/api/accounts/:accountId/drafts", async (c) => {
   }
   if (!input || typeof input !== "object")
     return c.json({ error: "invalid_message" }, 400);
-  const result = await stub(c.env).createDraft(c.req.param("accountId"), input);
+  // B-277: a forward's origin is kept beside the draft, never sent to Gmail nor part of the creation's key.
+  const { forward, ...message } = input as SendRequest & { forward?: unknown };
+  if (forward !== undefined && !validForward(forward)) return c.json({ error: "invalid_forward" }, 400);
+  const result = await stub(c.env).createDraft(c.req.param("accountId"), message as SendRequest);
+  if (result.status === "accepted" && result.providerDraftId && c.env.BUCKET && forward)
+    await storeForward(c.env.BUCKET, forwardKey({ account: c.req.param("accountId") }, result.providerDraftId), forward, "draft_create", { onlyIfAbsent: true });
   return c.json(
     result,
     result.status === "accepted"
@@ -551,6 +557,8 @@ export const GmailDraftUpdateBody = z.object({
   expectedRevision: z.string().max(200).optional(),
   /** Ids of the draft's files to keep; absent keeps them all. */
   keepAttachments: z.array(z.string().max(2048)).max(10).optional(),
+  /** B-277: a forward's origin, as the app writes it; kept beside the draft, never sent to Gmail. Absent leaves it as it was. */
+  forward: z.string().max(FORWARD_META_MAX).optional(),
 }).strict();
 export const GmailDraftSendBody = z.object({ idempotencyKey: z.string().min(1).max(128), expectedRevision: z.string().max(200).optional() }).strict();
 
@@ -558,21 +566,30 @@ accountsRouter.get("/api/accounts/:accountId/drafts", async (c) =>
   c.json(await stub(c.env).listDrafts(c.req.param("accountId"), c.req.query("cursor") || undefined)),
 );
 // One draft in full; "/content" because /drafts/:idempotencyKey is a draft's creation receipt.
-accountsRouter.get("/api/accounts/:accountId/drafts/:draftId/content", async (c) =>
-  c.json(await stub(c.env).getDraft(c.req.param("accountId"), c.req.param("draftId"))),
-);
+accountsRouter.get("/api/accounts/:accountId/drafts/:draftId/content", async (c) => {
+  const draft = await stub(c.env).getDraft(c.req.param("accountId"), c.req.param("draftId"));
+  const forward = c.env.BUCKET ? await readForward(c.env.BUCKET, forwardKey({ account: c.req.param("accountId") }, c.req.param("draftId"))) : null;
+  return c.json({ ...draft, forward });
+});
 accountsRouter.put("/api/accounts/:accountId/drafts/:draftId", async (c) => {
   const parsed = GmailDraftUpdateBody.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "invalid_message" }, 400);
-  return c.json(await stub(c.env).updateDraft(c.req.param("accountId"), c.req.param("draftId"), parsed.data as never));
+  const { forward, ...update } = parsed.data;
+  if (forward !== undefined && !validForward(forward)) return c.json({ error: "invalid_forward" }, 400);
+  const saved = await stub(c.env).updateDraft(c.req.param("accountId"), c.req.param("draftId"), update as never);
+  if (c.env.BUCKET && forward) await storeForward(c.env.BUCKET, forwardKey({ account: c.req.param("accountId") }, c.req.param("draftId")), forward, "draft_save");
+  return c.json(saved);
 });
-accountsRouter.delete("/api/accounts/:accountId/drafts/:draftId", async (c) =>
-  c.json(await stub(c.env).deleteDraft(c.req.param("accountId"), c.req.param("draftId"))),
-);
+accountsRouter.delete("/api/accounts/:accountId/drafts/:draftId", async (c) => {
+  const result = await stub(c.env).deleteDraft(c.req.param("accountId"), c.req.param("draftId"));
+  if (c.env.BUCKET) await removeForward(c.env.BUCKET, forwardKey({ account: c.req.param("accountId") }, c.req.param("draftId")), "draft_delete");
+  return c.json(result);
+});
 accountsRouter.post("/api/accounts/:accountId/drafts/:draftId/send", async (c) => {
   const parsed = GmailDraftSendBody.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: "idempotency_key_required" }, 400);
   const result = await stub(c.env).sendDraft(c.req.param("accountId"), c.req.param("draftId"), parsed.data.idempotencyKey, parsed.data.expectedRevision);
+  if (result.status === "accepted" && c.env.BUCKET) await removeForward(c.env.BUCKET, forwardKey({ account: c.req.param("accountId") }, c.req.param("draftId")), "draft_send");
   return c.json(result, result.status === "accepted" ? 200 : result.status === "unknown" ? 409 : 400);
 });
 
