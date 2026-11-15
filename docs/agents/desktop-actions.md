@@ -1,7 +1,9 @@
 # Every action of the desktop app, and the agent's door to it
 
 **State:** written 2026-11-08 for 1.2.0, from `desktop/menu.cjs` and the callbacks
-`desktop/main.cjs` `installMenu()` passes to it (lines 1334 to 1367). It answers the board
+`desktop/main.cjs` `installMenu()` passes to it (lines 1334 to 1367); checked again for 1.7.1 (2026-11-15).
+`tests/desktop-actions-parity.test.ts` (B-281) builds the menus of macOS, Windows and Linux with every
+optional item present and fails when an action has no row here, or a row names no door and no reason. It answers the board
 announcement ea54cd39 (thread a5885efd): every action the app offers a person is an agent's action too,
 or the reason it is not is written down. Fabric task 946bf8fb, backlog B-236.
 
@@ -54,7 +56,7 @@ typed secret) is a human gate, not a missing door; the row says so.
 |---|---|---|---|
 | Agent Console (⌃⌘T, Ctrl+Shift+T) | `desktop/main.cjs:1365` (`openConsole`), `desktop/console.cjs` | not needed | The console runs a coding agent for the person; an agent elsewhere connects with its own key (`create_agent_key`, or the `fabric-inbox://connect` link below). |
 | Retry connection (⌘R) | `desktop/main.cjs:1364` (`retryMail`) | launch | `lifecycle.restart` reloads everything; the window alone has no door. |
-| Zoom, Full Screen, Edit menu, Window menu | Electron roles | not needed | Presentation only. |
+| Zoom, Full Screen, Edit menu, Window menu | Electron roles | not needed | Presentation only: nothing on a server or in the profile changes. |
 
 ## Outside the menus
 
@@ -65,6 +67,8 @@ typed secret) is a human gate, not a missing door; the row says so.
 | Move window: Wait Longer, Put It Back, Try Again, Cancel | `desktop/move.js`, `desktop/move.cjs` | server | `move_address` `unroute` and `release` are the way back; a move an agent runs with the tools has its own journal, not the app's `move.json`. |
 
 ## What is missing
+
+B-281 (fabric-workspace plan row 2.11) asked for this list with a test that holds it; the test is above.
 
 B-236 collects the actions with no door: asking for an update check now, Open at Login, Forget Server,
 and Share Usage Details (named, kept without a door unless the

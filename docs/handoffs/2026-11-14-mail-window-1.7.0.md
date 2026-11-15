@@ -26,6 +26,6 @@ previous entry is [2026-11-14, send reasons and tool secrets](2026-11-14-send-re
 
 ## Exact next task
 
-1. Watch release run `43648768482` (tag `v1.7.0`) to the published release, then update the local install.
+1. Done; next is [2026-11-15](2026-11-15-grants-cutover-1.7.1.md). Watch release run `43648768482` (tag `v1.7.0`) to the published release, then update the local install.
 2. B-277: keep the forward's file list when a draft is reopened from Drafts (`app/components/inbox/server-drafts.ts:248`, `:255`).
 3. On or after 2026-11-15: the B-246 cut-over (previous handoff).
