@@ -130,7 +130,7 @@ per package and has no checked universal path; Intel Macs install the universal 
 
 1. **Version.** Bump `version` in `package.json`, `package-lock.json` (its two root entries),
    `desktop/package.json` and `plugins/fabric-inbox/.claude-plugin/plugin.json`, and turn
-   `## Unreleased` in `CHANGELOG.md` into `## <version> — <date>` (under an agent-sync lease:
+   `## Unreleased` in `CHANGELOG.md` into `## <version> (<date>)` (under an agent-sync lease:
    [AGENT_SYNC.md](AGENT_SYNC.md)). `tests/versions.test.ts` fails until all of them agree.
 2. **Gates.** `npm ci && npm test && npm run typecheck && npm run build`, then
    `python3 docs/ux/lint.py && python3 docs/ux/doctor.py && python3 docs/brand/lint.py` and
