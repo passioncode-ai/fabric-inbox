@@ -95,7 +95,7 @@ of step W5 is assembled from `sales-leads` through the base's assembly, never wr
 - **D-4. Inbox answers requests for access.** A new tool `request_access {mailboxes, can, why, until?}` (holder, expiry, repetition and single decision as R-3 says) works with any
   key, even one that holds nothing yet (a `requester` key the Fabric hub or the connect link can make with no mail
   reach). The request waits in Settings → Agent access and is announced to the owner and administrators (the app's
-  notification, and their Telegram through our gateway when the organization has it); approve, narrow or refuse
+  notification; in Telegram by R33 O9: the operator through his notification channel, any other owner or administrator through the gateway or their organization's channel, when the organization has one); approve, narrow or refuse
   there, or by an administrator's agent with the tool `decide_access_request` (dashboard parity). Approving makes the
   grant (D-1), and the requester sees it on its next call (`list_my_access`). The same request comes over the Fabric
   board: capability `mail.access` on this project, handled by a session that calls the server with an administrator's

@@ -88,6 +88,25 @@ npm run mcp:docs                                       # the agent protocol's to
   before/after measurement showing it is no worse (a reply agent's eval tickets run against each new version, B-199);
   a regression is rolled back first. Every change, by an agent or a person, gets its board row and a line in
   `CHANGELOG.md` with its reason and basis.
+- **Telegram: two channels, by who the message is for (R33 O9)** (operator, 2026-11-15: «давай определим когда
+  нам шлюз нуден а когда коммуникатор и на ввсе агентов через базу агентов правила распространим»; agents base decision
+  D-50, relayed on the board in request `6cbbc112`). It binds every agent working on Inbox and Inbox's own agents
+  (the reply agents and the triage). **To the operator himself: his notification channel**, the notify tool of his
+  personal notification service, which reaches only his private chat (results, build, release and test-build links, approval requests, failures, recoveries,
+  and a question as `kind: question` with `questionId`, `revision`, `expiresAt`, also asked through
+  `fabric_question_ask`): one stable `eventId` per event (at most 160 characters, the same on every retry), text only,
+  1 to 3500 characters, a file as a link (a Fabric Dashboards link, private storage), never an attachment; read
+  the channel's status first and, when it is not connected, say so in the reply and keep the link there. Never the
+  Telegram gateway for him: it acts as his own account. **To anyone else, or acting as an account: the Telegram
+  gateway** (the machine's Telegram client service and its send tool) under this project's grant, allowlist and approvals:
+  another person, a group, a team chat (the operator being in it changes nothing), a channel, a bot the gateway holds,
+  reading chats and admin acts; never the notification channel for these. A file the operator orders delivered to him in
+  Telegram goes through the gateway to the chat he names. An organization's server and its agents report to that
+  organization's own administrator through its organization's channel (its administrator agent's `people.ask` or the
+  like), never the operator's. Inbox's server and Mac app send nothing to Telegram today (2026-11-16): urgent mail
+  reaches the agent signals server by its MCP grant, which is neither channel; the storage warning (B-206 step 2) and
+  the access-request notice (B-246 D-4) are designed on this rule. The exact service and tool names are in the agents
+  base's R33 O9 and the operator's own rules on his machine, not in this public repository.
 - **Every function of the app is an agent tool, in the same change** (operator, 2026-09-29). A new
   or changed route gets its tool in `workers/mcp/tools.ts` (or an exclusion with its reason in
   `NOT_TOOLS`), then `npm run mcp:docs` regenerates [docs/agents/mcp.md](docs/agents/mcp.md), and

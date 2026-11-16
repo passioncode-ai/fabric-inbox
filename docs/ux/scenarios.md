@@ -2030,7 +2030,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Preconditions:** I administer the server. Each mailbox and shared store stops taking new mail at Cloudflare's per-object limit (10 GB on Workers Paid); reads and deletes still work there.
 - **Steps:**
   1. Open Storage -> each mailbox and shared store with its size, its percent of the limit and its level (fine, nearly full from 80%, full from 95%), the fullest first, and the size of the files.
-  2. A mailbox passes 80% -> once a day the server records it, the Mac app shows one notice naming the mailbox and its percent, and the operator's watcher sends the same line to Telegram.
+  2. A mailbox passes 80% -> once a day the server records it, the Mac app shows one notice naming the mailbox and its percent, and the operator's watcher sends the same line to Telegram (to the operator through his notification channel, to anyone else through the gateway; R33 O9).
   3. A mailbox passes 95% -> the server moves Trash, Spam and Discarded older than 7 days into an archive in the files, then removes them from the mailbox; if it is still at 95%, Archive and Sent older than a year follow. The notice says how many messages were moved and how much was freed.
   4. Open the mailbox's archive in Storage -> how many messages it holds, from when to when, and when it will be deleted (90 days after the move).
   5. Choose Restore -> the archived messages come back into their folders with their ids, read state and files.
@@ -2042,7 +2042,7 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Status:** draft
 - **Coverage:** none
 - **Product:** unobserved
-- **Today:** Step 1 only through agents (`get_storage`, 0.94.0, B-206 step 1); no screen, notice, cleanup or archive yet. The Telegram line waits for the operator's gateway grant.
+- **Today:** Step 1 only through agents (`get_storage`, 0.94.0, B-206 step 1); no screen, notice, cleanup or archive yet. The Telegram line is not built (the watcher of step 2).
 
 ### SCN-098: Let an agent give people mailboxes and issue keys without asking me
 - **Persona:** P-01
