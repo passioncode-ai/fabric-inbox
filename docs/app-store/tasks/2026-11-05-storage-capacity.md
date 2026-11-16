@@ -36,10 +36,14 @@ object under 0.1% of 10 GB. Files: 190 objects, 21.6 MB. The phishing mail's 98.
 - The server checks once a day (the ledger's alarm) and writes `storage.warn` or `storage.full` as an event and as a
   failed operation `storage.<level>` in the hourly digest (B-205), so Fabric and Observatory see it.
 - The Mac app shows a notice to an administrator, as for an older server (B-204).
-- Telegram: the operator's rule (2026-11-04) is that every message to a person goes through the operator's own
-  Telegram gateway. A customer's server cannot reach it; a watcher on the operator's Mac reads `get_storage` of the
-  servers it knows and sends through the gateway. It needs a gateway grant for this project (scope `send` and the chat):
-  the operator's act, not yet given (no `TELEGRAM_GATEWAY_TOKEN` slot on 2026-11-05).
+- Telegram, by who the warning is for (R33 O9, the operator's rule of 2026-11-15, agents base D-50; it narrows the
+  rule of 2026-11-04). A customer's server reaches no Telegram itself; a watcher on the operator's Mac reads
+  `get_storage` of the servers it knows. A warning for the operator goes to him through his notification channel
+  (its notify tool, one stable `eventId` per server, mailbox, level and day; its status read first),
+  never through the Telegram gateway, which acts as his own account. A warning for anyone else (an organization's
+  administrator, a team chat) goes through the gateway under this project's grant (scope `send` and that chat), or
+  to an organization's administrator through its organization's channel. Until 2026-11-15 this step waited for a
+  gateway grant; the operator's warning no longer needs one.
 
 ## Step 3: a cleanup that keeps mail restorable (designed, not built; scenario first)
 
@@ -57,4 +61,4 @@ The scenario is [SCN-097](../../ux/scenarios.md) (draft, 2026-11-05): steps 2 an
 ## Exact next task
 
 The scenario for step 3 (what is archived, when, how it is restored, what the person sees), then step 2's server half
-(the daily check, the event and the digest's operation). Telegram waits for the operator's gateway grant.
+(the daily check, the event and the digest's operation). Telegram to the operator goes through his notification channel (above); a gateway grant is needed only for a warning to someone else.
