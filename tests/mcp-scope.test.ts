@@ -141,6 +141,47 @@ test("a key with several mailboxes gets each one's feed merged, one page, newest
   assert.match(JSON.stringify(out.issues), /page one mailbox at a time/);
 });
 
+test("B-289: a key with 40 mailboxes lists each once, not once per page, and reads at most 8 at a time", async () => {
+  const mine = Array.from({ length: 40 }, (_, i) => `cloudflare:box${i}@owner.example`);
+  const every = [...mine, "cloudflare:other@owner.example"];
+  let open = 0, widest = 0;
+  const asked: string[] = [];
+  const api: Api = { async request(_m, p, init = {}) {
+    if (p === "/api/inbox/hidden") return { status: 200, contentType: "application/json", data: { hidden: [] } };
+    asked.push(String(init.query?.account));
+    open++; widest = Math.max(widest, open);
+    await new Promise((r) => setTimeout(r, 2));
+    open--;
+    // As the real route answers: every account of the server, whichever one was asked, and a feed-wide issue.
+    return { status: 200, contentType: "application/json", data: { accounts: every.map((id) => ({ id })), messages: [], hasMore: false,
+      issues: [{ provider: "gmail", error: "not configured" }] } };
+  } };
+  const out = (await scopedApi(api, mine).request("GET", "/api/inbox", { query: { limit: 1 } })).data as { accounts: { id: string }[]; issues: unknown[] };
+  assert.deepEqual(out.accounts.map((a) => a.id), mine, "each of the key's mailboxes once, in the server's order, no other");
+  assert.equal(out.issues.length, 1, "a feed-wide issue once");
+  assert.deepEqual(asked, mine, "each mailbox read once, started in order");
+  assert.ok(widest > 1 && widest <= 8, `read ${widest} at once`);
+  // list_accounts through the same key: 40 accounts, not 1,600.
+  const listAccounts = TOOLS.find((t) => t.name === "list_accounts")!;
+  const api2: Api = { async request(m, p, init) {
+    if (p === "/api/accounts") return { status: 200, contentType: "application/json", data: { accounts: [] } };
+    return api.request(m, p, init);
+  } };
+  const result = await runTool(listAccounts, {}, { api: scopedApi(api2, mine), principal: scoped(mine) }, ledger());
+  assert.equal(result.isError, undefined);
+  assert.equal((JSON.parse(result.content[0]!.text) as { accounts: unknown[] }).accounts.length, 40);
+});
+
+test("B-289: a failing mailbox's page still fails the merged read", async () => {
+  const api: Api = { async request(_m, p, init = {}) {
+    if (p === "/api/inbox/hidden") return { status: 200, contentType: "application/json", data: { hidden: [] } };
+    if (init.query?.account === "gmail:g1") return { status: 503, contentType: "application/json", data: { error: "inbox_unavailable" } };
+    return { status: 200, contentType: "application/json", data: { accounts: [{ id: init.query?.account }], messages: [], hasMore: false } };
+  } };
+  const out = await scopedApi(api, [RESEARCH, "gmail:g1"]).request("GET", "/api/inbox", { query: {} });
+  assert.equal(out.status, 503);
+});
+
 test("categories are the workspace's, so a limited key cannot filter the feed by one (review AP-11 #1)", async () => {
   const { api, calls } = fakeApi();
   const s = scopedApi(api, [RESEARCH]);
