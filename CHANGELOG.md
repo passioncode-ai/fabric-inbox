@@ -5,6 +5,10 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+**A key limited to many mailboxes lists each once, in seconds** (B-289, reported on the board on 2026-11-17, request `fc525261`). A read key limited to `domain:<domain>` with 40 addresses got 1,600 rows from `list_accounts` (each address 40 times) after 46 s: the merged All inboxes read each mailbox's feed one after another, and every page lists all the key's mailboxes. Each mailbox and each feed-wide issue is now kept once, and the feeds are read 8 at a time, in order. A member of a workspace whose access names several mailboxes gets the same fix in the app. Basis: the two B-289 cases of `tests/mcp-scope.test.ts`.
+
 ## 1.7.3 (2026-11-17)
 
 **Okolos looks up the sender's domains** (B-288, [plan](docs/ux/plans/2026-11-17-sender-domains.md), asked by the operator on 2026-11-17 over a forged-sender enquiry whose replies went to a stranger's domain). The safety panel has a section, The sender's domains, with Look up the domains: for every From and Reply-To domain (never this server's own) the server asks the registry when it was registered and by whom (RDAP), reads its DNS (does it take mail, does it publish SPF and DMARC), and visits its site's main page (never a link from the message), checking every hop against the Okolos phishing feed and the lookalike check before requesting it. A domain registered under 30 days ago, unregistered, held by its registry, whose site hands over a file, or whose page title names a watched brand on another domain makes the message Suspicious; a site on the phishing list or a lookalike Reply-To domain makes it Dangerous and makes a reply agent draft instead of send; nothing it finds lowers a colour. Kept beside the check (`findings.domains`), answered from the record for a day, at most 100 lookups a day per server. Agents: `look_up_sender_domains`. Basis: `tests/safety-domains.test.ts`, the S03c case of `tests/safety-workerd.test.ts`.

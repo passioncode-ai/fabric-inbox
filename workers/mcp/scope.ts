@@ -164,6 +164,24 @@ function cursorAccounts(cursor: unknown): string[] | null {
   } catch { return null; }
 }
 
+/** B-289: how many mailboxes' feeds a limited key's All inboxes reads at once. */
+export const FEED_READS_AT_ONCE = 8;
+
+/** `items` mapped through `run`, at most `width` at a time, answers in the items' order; each starts in that order. */
+async function inOrder<T, R>(items: readonly T[], width: number, run: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const lane = async () => { while (next < items.length) { const i = next++; out[i] = await run(items[i]!); } };
+  await Promise.all(Array.from({ length: Math.min(width, items.length) }, lane));
+  return out;
+}
+
+/** The first of each key, in order. */
+const uniqueBy = <T>(items: readonly T[], keyOf: (item: T) => string): T[] => {
+  const seen = new Set<string>();
+  return items.filter((item) => { const k = keyOf(item); if (seen.has(k)) return false; seen.add(k); return true; });
+};
+
 /** Wraps the app's API for a key limited to `accounts`. */
 export function scopedApi(api: Api, accounts: readonly string[], who: ScopeSubject = "key"): Api {
   const allowed = new Set(accounts);
@@ -341,19 +359,20 @@ export function scopedApi(api: Api, accounts: readonly string[], who: ScopeSubje
       const hiddenAnswer = await api.request("GET", "/api/inbox/hidden").catch(() => null);
       const hidden = new Set(((hiddenAnswer?.data as { hidden?: unknown[] } | null)?.hidden ?? []).map((h) => String(h).toLowerCase()));
       const shown = accounts.filter((a) => !hidden.has(a.toLowerCase()));
-      const pages: Feed[] = [];
-      for (const account of shown.length ? shown : accounts) {
-        const page = await oneFeed(init, account, false);
-        if (page.status < 200 || page.status >= 300) return page;
-        pages.push(page.data as Feed);
-      }
+      // B-289: read FEED_READS_AT_ONCE pages at a time, in order (40 mailboxes one by one took 46 s).
+      const answers = await inOrder(shown.length ? shown : accounts, FEED_READS_AT_ONCE, (account) => oneFeed(init, account, false));
+      const failed = answers.find((page) => page.status < 200 || page.status >= 300);
+      if (failed) return failed;
+      const pages = answers.map((page) => page.data as Feed);
       const limit = Number(init.query?.limit) || 50;
       const messages = pages.flatMap((p) => p.messages ?? [])
         .sort((a, b) => String(b.date ?? "").localeCompare(String(a.date ?? ""))).slice(0, limit);
       const more = pages.some((p) => p.hasMore);
       return { status: 200, contentType: "application/json", data: {
-        accounts: pages.flatMap((p) => p.accounts ?? []), messages, hasMore: more,
-        issues: [...pages.flatMap((p) => p.issues ?? []),
+        // B-289: every page lists all the key's accounts (the feed keeps its sidebar whole), and a feed-wide
+        // issue comes once per page: each is kept once, so 40 mailboxes no longer read as 1,600.
+        accounts: uniqueBy(pages.flatMap((p) => p.accounts ?? []), (a) => String(a.id)), messages, hasMore: more,
+        issues: [...uniqueBy(pages.flatMap((p) => p.issues ?? []), (i) => JSON.stringify(i)),
           ...(more ? [{ provider: "scope", error: who === "person"
             ? msg("You reach {count} mailboxes; open one of them to see older mail.", { count: accounts.length })
             : `This key reaches ${accounts.length} mailboxes; page one mailbox at a time with accountId.` }] : [])],
