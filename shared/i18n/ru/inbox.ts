@@ -606,4 +606,5 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"Name one message to look up": "Укажите одно письмо для проверки",
 	"Today's domain lookups on this server are spent. Try again tomorrow.": "Проверки доменов на этом сервере на сегодня исчерпаны. Попробуйте завтра.",
 	"Its site presents itself as {brand}, but this is not {brand}'s domain.": "Его сайт выдаёт себя за {brand}, но это не домен {brand}.",
+	"Only received mail has a sender to look up.": "Проверить отправителя можно только у полученного письма.",
 };

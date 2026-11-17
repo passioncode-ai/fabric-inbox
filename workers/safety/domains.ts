@@ -14,11 +14,15 @@ import { addresses } from "./sender";
  * feed and the lookalike check before the next request. Its signals only ever raise a message's colour (`colourOf`).
  */
 export const MAX_DOMAINS = 4;
+/** Every request of one lookup together (RDAP, DNS, the site's hops), under the Workers free plan's 50 subrequests a call. */
+export const MAX_REQUESTS = 40;
 export const MAX_REDIRECTS = 5;
 export const SITE_BYTES = 64 * 1024;
 export const READ_TIMEOUT_MS = 8_000;
 /** The whole site visit, every hop together: the lookup answers inside the app's 30-second request. */
 export const SITE_BUDGET_MS = 12_000;
+/** The registry's reads together (the redirector, IANA's list, the registry's own server): RDAP, then the site, end in 22 s. */
+export const RDAP_BUDGET_MS = 10_000;
 export const NEW_DOMAIN_DAYS = 30;
 const DAY = 86_400_000;
 
@@ -86,12 +90,14 @@ type Rdap = Pick<DomainFinding, "rdap" | "registered" | "expires" | "changed" | 
 
 /** The registry's record of a domain (RFC 9083): its dates, its registrar and its status. */
 export async function readRdap(domain: string, deps: DomainDeps): Promise<Rdap> {
-  const ask = (url: string) => timed(deps, url, { headers: { Accept: "application/rdap+json, application/json", "User-Agent": USER_AGENT }, redirect: "follow" })
-    .catch(() => null);
+  const started = Date.now();
+  const left = () => Math.min(READ_TIMEOUT_MS, RDAP_BUDGET_MS - (Date.now() - started));
+  const ask = async (url: string) => left() <= 0 ? null
+    : timed(deps, url, { headers: { Accept: "application/rdap+json, application/json", "User-Agent": USER_AGENT }, redirect: "follow" }, left()).catch(() => null);
   let response = await ask(RDAP_BASE + encodeURIComponent(domain));
   // The redirector down or refusing: the registry's own server, from IANA's list.
   if (!response || (!response.ok && response.status !== 404)) {
-    const base = await registryServer(domain, deps);
+    const base = left() > 0 ? await registryServer(domain, deps, left()) : null;
     if (base) response = await ask(`${base}domain/${encodeURIComponent(domain)}`);
   }
   if (!response) return { rdap: "failed" };
@@ -120,10 +126,10 @@ export async function readRdap(domain: string, deps: DomainDeps): Promise<Rdap> 
 let bootstrap: { at: number; services: [string[], string[]][] } | null = null;
 
 /** The RDAP server of a domain's top-level domain (the longest suffix IANA lists), ending in `/`, or null. */
-async function registryServer(domain: string, deps: DomainDeps): Promise<string | null> {
+async function registryServer(domain: string, deps: DomainDeps, ms: number): Promise<string | null> {
   if (!bootstrap || deps.now - bootstrap.at > DAY) {
     try {
-      const response = await timed(deps, RDAP_BOOTSTRAP, { headers: { Accept: "application/json", "User-Agent": USER_AGENT } });
+      const response = await timed(deps, RDAP_BOOTSTRAP, { headers: { Accept: "application/json", "User-Agent": USER_AGENT } }, ms);
       if (!response.ok) return null;
       const body = await response.json() as { services?: [string[], string[]][] };
       if (!Array.isArray(body.services)) return null;
@@ -187,19 +193,22 @@ export async function readDns(domain: string, deps: DomainDeps): Promise<DomainF
  * requested, at most SITE_BYTES of the body read, no cookies, nothing run.
  */
 export async function visitSite(domain: string, deps: DomainDeps, watchlist: readonly string[]): Promise<DomainSite> {
+  const own = new Set(deps.ownDomains.map((d) => registrableDomain(asciiHost(d))));
   const site: DomainSite = { status: null, hops: [], leaves: false, password: false };
   let url = `https://${domain}/`;
   const started = Date.now();
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     let parsed: URL;
     try { parsed = new URL(url); } catch { site.stopped = "notHttp"; return site; }
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") { site.stopped = "notHttp"; return site; }
+    // Only the web's own ports: a hop to another port is a service, not a site.
+    if ((parsed.protocol !== "https:" && parsed.protocol !== "http:") || parsed.port) { site.stopped = "notHttp"; site.finalUrl = shown(parsed.href); return site; }
     const host = parsed.hostname.toLowerCase();
     if (!site.hops.includes(host)) site.hops.push(host);
     site.leaves = registrableDomain(host) !== domain;
-    if (deps.feed && matchUrl(parsed.href, deps.feed)) { site.stopped = "listedHop"; site.finalUrl = parsed.href; return site; }
-    if (host !== domain && checkLookalike(host, watchlist)) { site.stopped = "lookalikeHop"; site.finalUrl = parsed.href; return site; }
-    if (!lookupable(registrableDomain(host))) { site.stopped = "notHttp"; site.finalUrl = parsed.href; return site; }
+    if (deps.feed && matchUrl(parsed.href, deps.feed)) { site.stopped = "listedHop"; site.finalUrl = shown(parsed.href); return site; }
+    if (host !== domain && checkLookalike(host, watchlist)) { site.stopped = "lookalikeHop"; site.finalUrl = shown(parsed.href); return site; }
+    // Never a name that is not a public site, and never this server's own: the visit must not call the server it runs on.
+    if (!lookupable(registrableDomain(host)) || own.has(registrableDomain(host))) { site.stopped = "notHttp"; site.finalUrl = shown(parsed.href); return site; }
     const left = Math.min(READ_TIMEOUT_MS, SITE_BUDGET_MS - (Date.now() - started));
     if (left <= 0) { site.stopped = "noAnswer"; return site; }
     let response: Response;
@@ -207,7 +216,7 @@ export async function visitSite(domain: string, deps: DomainDeps, watchlist: rea
       response = await timed(deps, parsed.href, { redirect: "manual", headers: { Accept: "text/html,*/*;q=0.5", "User-Agent": USER_AGENT } }, left);
     } catch { site.stopped = "noAnswer"; return site; }
     site.status = response.status;
-    site.finalUrl = parsed.href;
+    site.finalUrl = shown(parsed.href);
     const location = response.headers.get("location");
     if (response.status >= 300 && response.status < 400 && location) {
       await response.body?.cancel().catch(() => undefined);
@@ -217,7 +226,8 @@ export async function visitSite(domain: string, deps: DomainDeps, watchlist: rea
     const type = (response.headers.get("content-type") ?? "").toLowerCase();
     const disposition = response.headers.get("content-disposition") ?? "";
     if (/\battachment\b/i.test(disposition) || FILE_TYPES.test(type)) {
-      site.file = type.split(";")[0]!.trim() || "attachment";
+      // Only the media type's own token: a header is the sender's text and reaches agents.
+      site.file = type.match(/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+/)?.[0]?.slice(0, 80) || "attachment";
       await response.body?.cancel().catch(() => undefined);
       return site;
     }
@@ -235,6 +245,9 @@ export async function visitSite(domain: string, deps: DomainDeps, watchlist: rea
   site.stopped = "tooManyRedirects";
   return site;
 }
+
+/** An address as kept: invisible characters stripped, at most 300 characters (a Location header is the sender's text). */
+const shown = (url: string) => visibleText(url).slice(0, 300);
 
 async function readCapped(response: Response, limit: number): Promise<string> {
   const reader = response.body?.getReader();
@@ -302,8 +315,14 @@ export function domainSignalsOf(f: Omit<DomainFinding, "signals">, watchlist: re
   return signals;
 }
 
+/** Whether a lookup read everything it tried: one that did not is not kept as the answer for a day. */
+export const lookupComplete = (lookup: DomainLookup) => lookup.domains.every((d) => d.rdap !== "failed" && !d.dns.failed && d.site?.stopped !== "noAnswer");
+
 /** The whole lookup of one message's sender domains. */
-export async function lookupDomains(input: { fromLine: string; replyToLine?: string | null }, deps: DomainDeps): Promise<DomainLookup> {
+export async function lookupDomains(input: { fromLine: string; replyToLine?: string | null }, given: DomainDeps): Promise<DomainLookup> {
+  // Past MAX_REQUESTS a read fails like an unanswered one, so the lookup says it did not run in full instead of failing.
+  let sent = 0;
+  const deps: DomainDeps = { ...given, fetch: ((url, init) => ++sent > MAX_REQUESTS ? Promise.reject(new Error("request cap")) : given.fetch(url, init)) as typeof fetch };
   const watchlist = [...DEFAULT_WATCHLIST, ...deps.ownDomains.map((d) => d.trim().toLowerCase()).filter(Boolean)];
   const picked = senderDomains(input.fromLine, input.replyToLine, deps.ownDomains);
   const domains = await Promise.all(picked.domains.map(async ({ domain, roles }) => {

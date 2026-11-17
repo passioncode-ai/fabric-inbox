@@ -292,11 +292,11 @@ export function asciiHost(host: string): string {
  * review code that raised the message. Null when nothing stops a send.
  */
 export function draftOnlyReason(record: SafetyLikeRecord | null | undefined): "sender" | "review" | null {
+  // S03c: a sender domain whose site is on the feed or imitates a watched name is a red floor of the sender too.
+  if (domainSignals(record?.findings?.domains).some((s) => s.severity === "critical")) return "sender";
   const check = record?.findings?.check;
   if (!check) return null;
   if (check.signals.some((s) => RED_SENDER.has(s.code))) return "sender";
-  // S03c: a sender domain whose site is on the feed or imitates a watched name is a red floor of the sender too.
-  if (domainSignals(record?.findings?.domains).some((s) => s.severity === "critical")) return "sender";
   if (check.review?.ran && check.review.codes.some((c) => RAISING_CODES.includes(c))) return "review";
   return null;
 }

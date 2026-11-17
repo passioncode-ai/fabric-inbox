@@ -141,6 +141,8 @@ safetyRouter.post("/api/safety/domains", async (c) => {
   const messageId = parsed.data.messageId;
   const read = await readForCheck(c.env, parsed.data.accountId, accountId, messageId);
   if ("error" in read) return c.json({ error: read.error }, read.status);
+  // Mail you sent and drafts: the sender is you; only received mail is looked up.
+  if (read.input.scope !== "received") return c.json({ error: msg("Only received mail has a sender to look up.") }, 400);
   const key = { accountId, messageId };
   if (!(await s.safetyOf([key]))[`${accountId}|${messageId}`]) await s.recheckSafety(key, read.input);
   const answer = await s.lookupSenderDomains(key, { fromLine: read.input.fromLine, replyToLine: read.input.replyToLine ?? null }, parsed.data.refresh === true);

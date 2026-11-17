@@ -20,7 +20,7 @@ and what answers on it.
 
 `workers/safety/domains.ts` `lookupDomains` looks up the registrable domain of every From and Reply-To address of
 one message (at most 4 domains, each once, its roles kept: `from`, `replyTo`). For each domain, three reads, each
-with an 8-second deadline, none with the person's or the server's credentials:
+with an 8-second deadline (the registry's reads 10 s together, the site's visit 12 s), none with the person's or the server's credentials:
 
 | Read | How | What is kept |
 |---|---|---|
@@ -36,7 +36,13 @@ Rules that keep the lookup safe:
   address, `localhost`, a single label, a reserved suffix such as `.local`, `.internal`, `.test`, `.invalid`; `.example` never resolves, so it needs no rule): those
   are listed as not looked up, with why.
 - **Every hop's host is checked against the Okolos phishing feed and the lookalike check** before the next request; a
-  listed or lookalike hop stops the visit.
+  listed or lookalike hop stops the visit, and so does a hop to this server's own domains or to any port but the web's
+  own (80, 443).
+- **At most 40 requests a lookup** (under the Workers free plan's 50 subrequests a call); past it a read fails like an
+  unanswered one. The registry's reads take at most 10 s together and the site's visit 12 s, so the answer comes inside
+  the app's 30-second request.
+- A media type and an address from the site are the sender's text and reach agents: the type is kept as its token only
+  (`application/zip`), the address stripped of invisible characters and cut to 300 characters.
 - The page title is stripped of zero-width and bidirectional characters and cut to 120 characters, and is shown as a
   quote, never as the panel's own words.
 
@@ -68,9 +74,13 @@ never lowers a colour and never makes a message grey: the six checks decide comp
   message's state, review and check stay as they are (the same rule as `POST /api/safety/check`, R6-1); a recheck of
   the six checks keeps it.
 - `POST /api/safety/domains {accountId, messageId, refresh?}`: runs the lookup and answers the record and the feed
-  version. A lookup younger than 24 hours is answered from the record unless `refresh` is true. At most 100 lookups a
-  day per server (each lookup is up to about 40 requests); over it the answer says so (429) and nothing is written. A
-  message with no record gets its six checks first. Member gate: allowed to a member, as the check is.
+  version. A lookup younger than 24 hours that read everything is answered from the record unless `refresh` is true (one
+  with a failed read may be asked again at once). At most 100 lookups a day per server; one with nothing to look up
+  spends none; over it the answer says so (429) and nothing is written. A message with no record gets its six checks
+  first. Mail you sent and drafts are refused (400): their sender is you. Member gate: allowed to a member, as the
+  check is.
+- The arrival check, when it runs after a lookup made on open (the message was opened before its arrival was checked),
+  carries the lookup over into the row it writes.
 - MCP tool `look_up_sender_domains` (level mail) over the same route.
 
 ### 4. What a person sees

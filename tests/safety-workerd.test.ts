@@ -517,3 +517,18 @@ test("S03c: a domain lookup is kept beside the check, never changes the state, i
     assert.equal(limited.limited, true);
   } finally { await mf.dispose(); }
 });
+
+test("S03c: an arrival that runs after a lookup made on open keeps the lookup and its colour", async () => {
+  const { mf, call } = await fixture();
+  try {
+    const key = { accountId: CF.id, messageId: "early" };
+    // The message is opened (and looked up) before its arrival check runs.
+    await call("recheck", { key, input: { subject: "Hello", html: "<p>Hi</p>", fromLine: "x@outside.example", replyToLine: "info@new-domain.example", sender: "x@outside.example", timestamp: 1, scope: "received" } });
+    await call("domains", { key, input: { fromLine: "x@outside.example", replyToLine: "info@new-domain.example" } });
+    await call("ingest", { account: CF, event: event("early", "<p>Hi</p>", { replyTo: "info@new-domain.example" }) });
+    const after = (await call("of", { keys: [key] }))[`${CF.id}|early`];
+    assert.notEqual(after.decidedBy, "open", "the arrival ran over the open-time row");
+    assert.ok(after.findings.domains?.domains.length, "the lookup survived the arrival's write");
+    assert.equal((await call("colours", { keys: [key] }))[`${CF.id}|early`].label, "suspicious");
+  } finally { await mf.dispose(); }
+});
