@@ -2614,6 +2614,10 @@ details.fi-quote:not([open]) .fi-quote-hide {
 }
 .fi-okolos-actions { display: flex; gap: 8px; margin: 8px 0 0; }
 .fi-okolos-when, .fi-okolos-about, .fi-okolos-note { margin: 8px 0 0; color: var(--pc-text-muted); }
+/* S03c (B-288): one block per looked-up domain; a domain name breaks anywhere rather than widen the panel. */
+.fi-okolos-domain h4 { margin: 8px 0 2px; font-size: var(--pc-type-meta); font-weight: 600; overflow-wrap: anywhere; }
+.fi-okolos-domain .fi-okolos-lines li { overflow-wrap: anywhere; }
+.fi-okolos-domains > p { margin: 4px 0 0; }
 
 /* S04 (B-270): the notice a guarded link raises, above the message frame. */
 .fi-link-notice {

@@ -17,10 +17,12 @@ export type Gate = "pass" | "feed" | "body" | "refuse" | "readonly" | "agents";
 
 /**
  * Reads change nothing: GET and HEAD, and the safety check's lookup, which reads verdicts with a POST. S03: the
- * open-time check counts as a read: it records what the checks found and changes no message, state or mail.
+ * open-time check counts as a read: it records what the checks found and changes no message, state or mail. S03c: so
+ * does the lookup of a message's sender domains (it records what it found and changes no message).
  */
 export const readsOnly = (method: string, pathname: string) =>
-  method === "GET" || method === "HEAD" || `${method} ${pathname}` === "POST /api/safety/lookup" || `${method} ${pathname}` === "POST /api/safety/check";
+  method === "GET" || method === "HEAD" || `${method} ${pathname}` === "POST /api/safety/lookup" || `${method} ${pathname}` === "POST /api/safety/check"
+  || `${method} ${pathname}` === "POST /api/safety/domains";
 
 /**
  * Routes a member may call with a body narrowed to their mailboxes (`memberBody`): emptying Spam

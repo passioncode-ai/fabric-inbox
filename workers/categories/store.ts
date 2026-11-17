@@ -25,6 +25,7 @@ import { HEAD_BYTES, TAIL_BYTES } from "../safety/sniff";
 import { checkLinks, extractLinks } from "../safety/links";
 import { buildCheck, reviewOwed } from "../safety/verdict";
 import { contentHash, reviewCheck } from "../safety/check-review";
+import { lookupDomains } from "../safety/domains";
 import { colourOf, type CheckReview, type FileEntry, type MailCheck, type SafetyColour } from "../../shared/mail/safety";
 import { addresses } from "../safety/sender";
 import { splitHidden } from "../safety/hidden";
@@ -92,6 +93,9 @@ export const DEFAULT_SAFETY_DAILY_CALLS = 2000;
 /** S03 (B-269): the review of mail that is not held: its own daily calls, and at most so many a day per sender domain. */
 export const DEFAULT_CHECK_REVIEW_DAILY_CALLS = 500;
 export const CHECK_REVIEW_PER_DOMAIN = 20;
+/** S03c (B-288): a domain lookup is answered from the record for a day, and at most this many run a day (each is up to about 40 requests). */
+export const DOMAIN_LOOKUP_FRESH_MS = 86_400_000;
+export const DOMAIN_LOOKUPS_PER_DAY = 100;
 const HTML_CHARS = 100_000;
 import { safetyOn } from "../safety/on";
 import { FEED_REFRESH_MS, FEED_STALE_MS, linksOf, lookalikeLinks, phishingLinks, refreshFeed, type FeedEnv, type KeptFeed } from "../safety/feed";
@@ -850,6 +854,36 @@ export class CategoriesDO extends DurableObject<Env> {
     console.log(JSON.stringify({ event: "safety_rechecked", account: key.accountId, scope: input.scope, signals: check.signals.length, notRun: check.notRun.length }));
     return (await this.safetyOf([key]))[safetyKey(key.accountId, key.messageId)] ?? null;
   }
+  /**
+   * S03c (B-288): looks up one message's sender domains (RDAP, DNS, the site's main page) and keeps the answer as
+   * `findings.domains`, beside the check and never in place of it: the state, review and check stay as they are. A
+   * lookup younger than DOMAIN_LOOKUP_FRESH_MS is answered from the record unless `refresh`; at most
+   * DOMAIN_LOOKUPS_PER_DAY run a day. The message must already have a record (the route checks it first).
+   */
+  async lookupSenderDomains(key: { accountId: string; messageId: string }, input: { fromLine: string; replyToLine?: string | null }, refresh = false):
+    Promise<{ record: SafetyRecord | null; limited?: true }> {
+    const now = Date.now();
+    const existing = (await this.safetyOf([key]))[safetyKey(key.accountId, key.messageId)];
+    if (!existing) return { record: null };
+    const kept = existing.findings.domains;
+    if (!refresh && kept?.version === 1 && now - kept.at < DOMAIN_LOOKUP_FRESH_MS) return { record: existing };
+    const today = new Date(now).toISOString().slice(0, 10);
+    const used = await this.ctx.storage.get<{ day: string; n: number }>("okolos:domain-lookups");
+    const n = used?.day === today ? used.n : 0;
+    if (n >= DOMAIN_LOOKUPS_PER_DAY) return { record: existing, limited: true };
+    await this.ctx.storage.put("okolos:domain-lookups", { day: today, n: n + 1 });
+    const ownDomains = (this.env.DOMAINS ?? "").split(",").map((d) => d.trim()).filter(Boolean);
+    const feed = await this.phishingFeed(now).catch(() => null);
+    const lookup = await lookupDomains(input, { fetch: this.domainFetch(), feed: feed?.snapshot ?? null, ownDomains, now });
+    this.sql.exec("UPDATE safety SET findings = json_set(findings, '$.domains', json(?)) WHERE account_id = ? AND message_id = ?",
+      JSON.stringify(lookup), key.accountId, key.messageId);
+    console.log(JSON.stringify({ event: "safety_domains_looked_up", account: key.accountId, domains: lookup.domains.length,
+      signals: lookup.domains.reduce((sum, d) => sum + d.signals.length, 0), notRun: lookup.notRun.length }));
+    return { record: (await this.safetyOf([key]))[safetyKey(key.accountId, key.messageId)] ?? null };
+  }
+  /** S03c: the fetch the domain lookup uses (overridden in tests). */
+  protected domainFetch(): typeof fetch { return (input, init) => fetch(input, init); }
+
   /** A seam for tests: runs between the recheck's read and its write (R6-1). */
   protected async beforeCheckWrite(_key: { accountId: string; messageId: string }): Promise<void> {}
 

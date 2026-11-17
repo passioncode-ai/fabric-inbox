@@ -1,6 +1,6 @@
 import { analyse, type SignalName } from "../../vendor/okolos/core-injection/signals";
 import { splitHidden, HIDDEN_CHARS } from "./hidden";
-import type { MailCheck } from "../../shared/mail/safety";
+import type { DomainLookup, MailCheck } from "../../shared/mail/safety";
 
 /**
  * B-178: whether an arriving message carries instructions aimed at an AI, read from what a person sees and what
@@ -36,6 +36,8 @@ export interface SafetyFindings {
   disguisedFiles?: string[];
   /** S03 (B-269, B-222): the six checks, their files and links, and the review of mail that is not held. */
   check?: MailCheck;
+  /** S03c (B-288): the lookup of the sender's domains, run on request and kept beside the check. */
+  domains?: DomainLookup;
 }
 
 export type SafetyScan = (text: string) => Promise<{ flagged: boolean; error?: string }>;

@@ -55,6 +55,14 @@ const bundle = await build({
           this.ctx.storage.sql.exec("INSERT OR REPLACE INTO safety (account_id, message_id, state, findings, review, reason, checked_at, decided_by, decided_at, timestamp, subject, sender) VALUES (?, ?, 'held', ?, NULL, 'arrival', 1, 'check', 1, 1, 's', 'x')",
             key.accountId, key.messageId, JSON.stringify({ visibleStrong: [], hiddenSignals: ['planted'], hidden: 'x', model: false }));
         }
+        // S03c: the domain lookup's requests: RDAP says registered three days ago, DNS answers nothing, the site a page.
+        domainFetch() { const store = this.ctx.storage; return async (input) => {
+          await store.put('test:domainAsked', ((await store.get('test:domainAsked')) || 0) + 1);
+          const url = new URL(String(input));
+          if (url.hostname === 'rdap.org') return Response.json({ events: [{ eventAction: 'registration', eventDate: new Date(Date.now() - 3 * 86400000).toISOString() }] });
+          if (url.hostname === 'cloudflare-dns.com') return Response.json({ Status: 0, Answer: [] });
+          return new Response('<title>Hello</title>', { headers: { 'content-type': 'text/html' } });
+        }; }
         feedFetch() { const store = this.ctx.storage; return async () => new Response((await store.get('test:feed')) || '{}', { status: (await store.get('test:feed')) ? 200 : 503 }); }
         async releaseAgent(item) { await this.ctx.storage.put('released:' + item.messageId, true); }
         async alarm() {}
@@ -78,6 +86,7 @@ const bundle = await build({
         if (c.op === 'putFile') { await s.putFile(c.key, c.text); return Response.json(true); }
         if (c.op === 'putBytes') { await s.putBytes(c.key, c.base64); return Response.json(true); }
         if (c.op === 'recheck') return Response.json(await s.recheckSafety(c.key, c.input));
+        if (c.op === 'domains') return Response.json(await s.lookupSenderDomains(c.key, c.input, !!c.refresh));
         if (c.op === 'colours') return Response.json(await s.coloursOf(c.keys));
         if (c.op === 'drainOnce') { await s.drainOnce(); return Response.json(true); }
         if (c.op === 'set') { await s.set(c.key, c.value); return Response.json(true); }
@@ -473,5 +482,38 @@ test("K-5: turning documents into text is charged to the review's budget; with n
     const r = (await call("of", { keys: [{ accountId: CF.id, messageId: "doc2" }] }))[`${CF.id}|doc2`];
     assert.deepEqual([r.state, r.findings.unreadFiles], ["clear", ["invoice.pdf"]]);
     assert.ok(r.findings.check.notRun.some((n: any) => n.check === "hidden" && n.why === "inboxDocumentBudget"));
+  } finally { await mf.dispose(); }
+});
+
+test("S03c: a domain lookup is kept beside the check, never changes the state, is answered from the record for a day and capped", async () => {
+  const { mf, call } = await fixture();
+  try {
+    const key = { accountId: CF.id, messageId: "planted" };
+    // No record yet: nothing is looked up (the route checks the message first).
+    assert.deepEqual(await call("domains", { key, input: { fromLine: "x@outside.example" } }), { record: null });
+    await call("ingest", { account: CF, event: event("planted", PLANTED, { replyTo: "info@new-domain.example" }) });
+    const before = (await call("of", { keys: [key] }))[`${CF.id}|planted`];
+    assert.equal(before.state, "held");
+    const input = { fromLine: "x@outside.example", replyToLine: "info@new-domain.example" };
+    const first = await call("domains", { key, input });
+    const after = first.record;
+    assert.equal(after.state, "held", "a held message stays held");
+    assert.deepEqual(after.findings.check, before.findings.check, "the check is untouched");
+    assert.equal(after.review.verdict, before.review.verdict);
+    assert.deepEqual(after.findings.domains.domains.map((d: any) => [d.domain, d.signals.map((x: any) => x.code)]),
+      [["new-domain.example", ["inboxDomainNew"]], ["outside.example", ["inboxDomainNew"]]]);
+    const asked = await call("get", { key: "test:domainAsked" });
+    // A second ask within the day is answered from the record; a refresh looks again.
+    await call("domains", { key, input });
+    assert.equal(await call("get", { key: "test:domainAsked" }), asked);
+    await call("domains", { key, input, refresh: true });
+    assert.ok((await call("get", { key: "test:domainAsked" })) > asked);
+    // A recheck of the six checks keeps the lookup.
+    await call("recheck", { key, input: { subject: "Hello", html: PLANTED, fromLine: input.fromLine, replyToLine: input.replyToLine, sender: "x@outside.example", timestamp: 1, scope: "received" } });
+    assert.ok((await call("of", { keys: [key] }))[`${CF.id}|planted`].findings.domains);
+    // The day's cap: the lookup is refused and nothing is written.
+    await call("set", { key: "okolos:domain-lookups", value: { day: new Date().toISOString().slice(0, 10), n: 100 } });
+    const limited = await call("domains", { key, input, refresh: true });
+    assert.equal(limited.limited, true);
   } finally { await mf.dispose(); }
 });
