@@ -66,6 +66,7 @@ const BODIES: Record<string, string[]> = {
   "POST /api/safety/lookup": ["keys"],
   "POST /api/safety/decide": ["accountId", "messageId", "action", "by"],
   "POST /api/safety/check": ["accountId", "messageId", "model"],
+  "POST /api/safety/domains": ["accountId", "messageId", "refresh"],
   "POST /api/discard": keys(DiscardInput),
   "POST /api/discard/restore": keys(RestoreInput),
   "POST /api/discard/allowed": keys(AllowEdit),

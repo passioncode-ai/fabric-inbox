@@ -401,6 +401,18 @@ const checkMessageSafety = defineTool({
   call: (a, ctx) => post(ctx, "/api/safety/check", { accountId: parseAccount(a.accountId).id, messageId: a.messageId }),
 });
 
+/**
+ * S03c (B-288): one message's sender domains looked up: registration (RDAP), DNS and what the site's main page does,
+ * visited from the server. Writes only the lookup beside the check; never changes the message or whether it is held.
+ */
+const lookUpSenderDomains = defineTool({
+  name: "look_up_sender_domains", title: "Look up a message's sender domains", level: "mail", target: (a) => `${a.accountId} ${a.messageId}`,
+  description: "Looks up the registrable domain of every From and Reply-To address of one message (at most 4; never the server's own domains): when the registry says it was registered and by which registrar, its status (a hold the registry set), whether it resolves and takes mail (MX), whether it publishes SPF and a DMARC policy, and what its site's main page does when the server visits it (the status, every hop with each checked against the Okolos phishing feed and the lookalike check, the title, whether it asks for a password or hands over a file). Only the domain's root is visited, never a link from the message. Use it when a message may be phishing or carry malware, before answering or opening anything. Signals: a domain under 30 days old, unregistered or on hold, or whose site hands over a file makes the message suspicious; a site on the phishing feed or a lookalike Reply-To domain makes it dangerous; nothing here lowers the message's colour. A lookup of the last day is answered from the record unless refresh is true; at most 100 run a day per server (429 after). Answers the record (its domains field holds the lookup) and feedVersion.",
+  input: { accountId, messageId, refresh: z.boolean().optional() },
+  routes: ["POST /api/safety/domains"],
+  call: (a, ctx) => post(ctx, "/api/safety/domains", { accountId: parseAccount(a.accountId).id, messageId: a.messageId, ...(a.refresh ? { refresh: true } : {}) }),
+});
+
 const decideHeldMessage = defineTool({
   name: "decide_held_message", title: "Release or keep a held message", level: "admin", target: (a) => `${a.accountId} ${a.messageId} ${a.action}`,
   // B-178: releasing hands text written to steer an agent to the agents; the owner decides it, whatever the key's setting.
@@ -2419,7 +2431,7 @@ const revokeGrant = defineTool({
 });
 
 export const TOOLS: readonly ToolDef[] = [
-  listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listHeldMessages, checkMessageSafety, decideHeldMessage, listFolders, getSendStatus,
+  listAccounts, listMessages, searchMailbox, listMailboxMessages, readMessageTool, readThread, getAttachment, listHeldMessages, checkMessageSafety, lookUpSenderDomains, decideHeldMessage, listFolders, getSendStatus,
   listAddresses, checkRouting, listDomains, getSpam, listAgents, listAgentRuns, getAgentOutcomes, listOpenQuestions, listAgentEvents, listEventHooks, addEventHook, removeEventHook, listAgentThreads, getAgentStatus, setAgentStatus, agentMailVolume, judgeBench, listAnswersToGrade, gradeAgentAnswer, getJudgeCalibration, answerAgain, discardAgentDraft, redraftAgentAnswer, getAgentTuning, previewAgentAnswer, getServerErrors, getOpsDigest, getStorage, getSupportMonths, getSupportTopics, listAgentEvals, saveAgentEval, removeAgentEval, runAgentEvals, listCategories, listKnowledge, searchKnowledge, listRules,
   listDraftsTool, readDraft, saveDraft, sendDraft, deleteDraft, sendEmail, reply, forward, updateMessages, moveMessages, labelMessages, checkSpam, markSpam, discardMessages, restoreDiscarded, listDiscardRules,
   deleteMessage, syncAccount, refreshInbox, markCategorySeen, manageFolder,

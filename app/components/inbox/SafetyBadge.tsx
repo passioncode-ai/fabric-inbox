@@ -1,7 +1,7 @@
 import { CheckIcon, ShieldCheckIcon, ShieldWarningIcon, ShieldSlashIcon, ShieldIcon, WarningIcon } from "@phosphor-icons/react";
 import { useT } from "~/lib/i18n";
 import { CHECKS, type CheckName, type FileEntry, type SafetyColour, type SafetyLikeRecord } from "../../../shared/mail/safety";
-import { badgeWords, fileWords, notRunWords, reviewNotRunWords, reviewWords, showsOkLine, signalWords } from "./safety-words";
+import { badgeWords, domainHeading, domainLines, domainNotRunWords, fileWords, notRunWords, reviewNotRunWords, reviewWords, showsOkLine, signalWords } from "./safety-words";
 
 /**
  * S03 (B-269, B-222): the Okolos badge at the right of the subject line, and its panel. The badge is a button with
@@ -26,6 +26,11 @@ export interface SafetyPanelProps {
   onReportSpam?: () => void;
   onDiscard?: () => void;
   onSaveAnyway?: (file: FileEntry) => void;
+  /** S03c (B-288): look up the sender's domains (absent: this reader cannot, so no button). */
+  onLookUpDomains?: (refresh: boolean) => void;
+  lookingUp?: boolean;
+  /** The lookup failed, or the day's lookups are spent: its words. */
+  lookupError?: string;
 }
 
 const ICONS = { green: ShieldCheckIcon, grey: ShieldIcon, amber: ShieldWarningIcon, red: ShieldSlashIcon } as const;
@@ -49,7 +54,7 @@ export default function SafetyBadge({ colour, checking, open, onToggle }: Safety
   );
 }
 
-export function SafetyPanel({ colour, record, failed, onReportSpam, onDiscard, onSaveAnyway }: SafetyPanelProps) {
+export function SafetyPanel({ colour, record, failed, onReportSpam, onDiscard, onSaveAnyway, onLookUpDomains, lookingUp, lookupError }: SafetyPanelProps) {
   const t = useT();
   const check = record?.findings.check;
   const fired = (name: CheckName) => check?.signals.filter((s) => s.check === name) ?? [];
@@ -80,6 +85,7 @@ export function SafetyPanel({ colour, record, failed, onReportSpam, onDiscard, o
                   return <li key={name} className="is-clean"><CheckIcon size={13} weight="bold" aria-hidden="true" className="fi-okolos-mark" />{okLine(name)}</li>;
                 })}
               </ul>
+              <SenderDomains record={record} received={check.scope === "received"} onLookUp={onLookUpDomains} busy={lookingUp} error={lookupError} />
               {!!check.files.length && (
                 <>
                   <h3>{t("Files")}</h3>
@@ -121,6 +127,7 @@ export function SafetyPanel({ colour, record, failed, onReportSpam, onDiscard, o
                   <h3>{t("First steps")}</h3>
                   <ul className="fi-okolos-lines">
                     <li>{t("Don't open its links: they ask before they open.")}</li>
+                    {check.scope === "received" && !record?.findings.domains && onLookUpDomains && <li>{t("Look up who registered the sender's domains (the button above).")}</li>}
                   </ul>
                   <p className="fi-okolos-actions">
                     {onReportSpam && <button type="button" className="fi-secondary" onClick={onReportSpam}>{t("Report spam")}</button>}
@@ -143,4 +150,46 @@ export function SafetyPanel({ colour, record, failed, onReportSpam, onDiscard, o
 /** A-17: a line that fired carries a warning mark, a clean one a check; the words already say which. */
 function Fired() {
   return <WarningIcon size={13} weight="bold" aria-hidden="true" className="fi-okolos-mark" />;
+}
+
+/**
+ * S03c (B-288): the sender's domains, looked up on request: who registered each From and Reply-To domain and when,
+ * whether it takes mail, what its site's main page does. Before a lookup, what it does and its button; after, one
+ * block per domain, fired lines first with the warning mark.
+ */
+function SenderDomains({ record, received, onLookUp, busy, error }: { record: SafetyPanelProps["record"]; received: boolean;
+  onLookUp?: (refresh: boolean) => void; busy?: boolean; error?: string }) {
+  const t = useT();
+  const lookup = record?.findings.domains;
+  if (!received || (!lookup && !onLookUp)) return null;
+  return (
+    <div className="fi-okolos-domains">
+      <h3>{t("The sender's domains")}</h3>
+      {!lookup && <p>{t("Looks up who registered the sender's domains, whether they take mail and what their site does. The site is visited from your server, at its main page only.")}</p>}
+      {lookup?.domains.map((d) => (
+        <div key={d.domain} className="fi-okolos-domain">
+          <h4>{domainHeading(d, t)}</h4>
+          <ul className="fi-okolos-lines">
+            {domainLines(d, t).map((l, i) => l.fired
+              ? <li key={i} className="is-fired"><Fired />{l.text}</li>
+              : <li key={i}>{l.text}</li>)}
+          </ul>
+        </div>
+      ))}
+      {!!lookup?.notRun.length && (
+        <ul className="fi-okolos-lines">
+          {lookup.notRun.map((n, i) => { const w = domainNotRunWords(n, t); return w ? <li key={i}>{w}</li> : null; })}
+        </ul>
+      )}
+      {error && <p role="alert">{error}</p>}
+      {lookup && <p className="fi-okolos-when">{t("Looked up {time}", { time: t.dateTime(new Date(lookup.at), { dateStyle: "medium", timeStyle: "short" }) })}</p>}
+      {onLookUp && (
+        <p className="fi-okolos-actions">
+          <button type="button" className="fi-secondary" disabled={busy} onClick={() => onLookUp(!!lookup)}>
+            {busy ? t("Looking up…") : lookup ? t("Look up again") : t("Look up the domains")}
+          </button>
+        </p>
+      )}
+    </div>
+  );
 }

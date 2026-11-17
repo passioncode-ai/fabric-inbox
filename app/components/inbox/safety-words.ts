@@ -4,7 +4,7 @@
  * `shared/i18n/ru/inbox.ts`. A code with no line here is shown as nothing, never as its key.
  */
 import type { T } from "../../../shared/i18n";
-import { asciiHost, visibleText, type BadgeLabel, type CheckName, type CheckSignal, type FileEntry, type MailCheck, type ReviewCode } from "../../../shared/mail/safety";
+import { asciiHost, visibleText, type BadgeLabel, type CheckName, type CheckSignal, type DomainFinding, type FileEntry, type MailCheck, type ReviewCode } from "../../../shared/mail/safety";
 
 export function badgeWords(label: BadgeLabel, t: T): string {
   switch (label) {
@@ -150,4 +150,82 @@ export function reviewNotRunWords(why: string | undefined, t: T): string {
 export function showsSafetyBadge(sent: boolean | undefined, check: Pick<MailCheck, "signals"> | null | undefined): boolean {
   if (!sent) return true;
   return !!check?.signals.some((s) => s.check === "links");
+}
+
+/**
+ * S03c (B-288): the words of the sender-domain lookup. A domain's fired signals first (with the warning mark), then
+ * what was read, as plain lines; dates in the reader's locale, the age as a count of days.
+ */
+const DAY = 86_400_000;
+export type DomainLine = { fired: boolean; text: string };
+
+export function domainHeading(d: Pick<DomainFinding, "domain" | "roles">, t: T): string {
+  const domain = asciiHost(d.domain);
+  if (d.roles.includes("from") && d.roles.includes("replyTo")) return t("{domain}: the sender's domain, and replies go here", { domain });
+  return d.roles.includes("replyTo") ? t("{domain}: replies go here", { domain }) : t("{domain}: the sender's domain", { domain });
+}
+
+export function domainSignalWords(s: DomainFinding["signals"][number], t: T): string {
+  const f = (label: string) => fact({ check: "replyPath", severity: s.severity, code: s.code, facts: s.facts }, label);
+  switch (s.code) {
+    case "inboxDomainSitePhishing": return t("Its site leads to {host}, which is on the phishing list.", { host: f("mailFactAddress") });
+    case "inboxDomainLookalike": return t("{host} imitates {resembles}.", { host: f("mailFactAddress"), resembles: f("mailFactResembles") });
+    case "inboxDomainNew": {
+      const n = Number(f("inboxFactDays")) || 0;
+      return t.plural(n, { one: "Registered {n} day ago: new domains are a common sign of fraud.", other: "Registered {n} days ago: new domains are a common sign of fraud." });
+    }
+    case "inboxDomainUnregistered": return t("No registry knows this domain, and the name does not resolve.");
+    case "inboxDomainOnHold": return t("The registry has put this domain on hold ({status}), as registries do for abuse.", { status: f("inboxFactStatus") });
+    case "inboxDomainSiteFile": return t("Its site hands over a file ({type}) instead of a page.", { type: f("inboxFactType") });
+    case "inboxDomainSiteBrand": return t("Its site presents itself as {brand}, but this is not {brand}'s domain.", { brand: f("mailFactResembles") });
+    case "inboxDomainSitePassword": return t("Its main page asks for a password.");
+    case "inboxDomainSiteElsewhere": return t("Its site sends you on to {host}.", { host: f("mailFactAddress") });
+    default: return "";
+  }
+}
+
+/** What was read about one domain, beside its signals. */
+export function domainLines(d: DomainFinding, t: T): DomainLine[] {
+  const lines: DomainLine[] = d.signals.map((s) => ({ fired: true, text: domainSignalWords(s, t) })).filter((l) => l.text);
+  const date = (time: number) => t.dateTime(new Date(time), { dateStyle: "medium" });
+  if (d.rdap === "found") {
+    if (d.registered !== undefined && !d.signals.some((s) => s.code === "inboxDomainNew")) {
+      const days = Math.max(0, Math.floor((Date.now() - d.registered) / DAY));
+      lines.push({ fired: false, text: t.plural(days, { one: "Registered {date}, {n} day ago.", other: "Registered {date}, {n} days ago." }, { date: date(d.registered) }) });
+    }
+    if (d.registrar) lines.push({ fired: false, text: t("Registrar: {registrar}.", { registrar: visibleText(d.registrar) }) });
+    if (d.registered === undefined && !d.registrar) lines.push({ fired: false, text: t("The registry knows this domain but did not say when it was registered.") });
+  } else if (d.rdap === "notFound" && !d.signals.some((s) => s.code === "inboxDomainUnregistered")) {
+    lines.push({ fired: false, text: t("The registry had no record of this domain.") });
+  } else if (d.rdap === "failed") lines.push({ fired: false, text: t("The registry could not be asked.") });
+  if (d.dns.resolves === false) {
+    if (!d.signals.some((s) => s.code === "inboxDomainUnregistered")) lines.push({ fired: false, text: t("The name does not resolve.") });
+  } else {
+    lines.push({ fired: false, text: d.dns.mx.length ? t("Takes mail ({hosts}).", { hosts: d.dns.mx.map(asciiHost).join(", ") }) : t("Names no mail server.") });
+    if (d.dns.spf !== null) lines.push({ fired: false, text: d.dns.spf ? t("Publishes which servers may send its mail (SPF).") : t("Does not say which servers may send its mail (no SPF).") });
+    if (d.dns.dmarc !== null) lines.push({ fired: false, text: d.dns.dmarc === "absent" ? t("Publishes no DMARC policy for forged mail.") : t("DMARC policy for forged mail: {policy}.", { policy: d.dns.dmarc }) });
+  }
+  if (d.dns.failed) lines.push({ fired: false, text: t("Its DNS could not be read in full.") });
+  const site = d.site;
+  if (site) {
+    if (site.stopped === "noAnswer") lines.push({ fired: false, text: t("Its site did not answer.") });
+    else if (site.stopped === "tooManyRedirects") lines.push({ fired: false, text: t("Its site redirected more than 5 times; the visit stopped.") });
+    else if (site.status !== null && !site.file) {
+      lines.push({ fired: false, text: site.title
+        ? t("Its site answered ({status}) with a page titled “{title}”.", { status: site.status, title: visibleText(site.title) })
+        : t("Its site answered ({status}).", { status: site.status }) });
+    }
+  }
+  return lines;
+}
+
+export function domainNotRunWords(n: { domain?: string; why: string }, t: T): string {
+  const domain = asciiHost(n.domain ?? "");
+  switch (n.why) {
+    case "ownDomain": return t("{domain}: this server's own domain, not looked up.", { domain });
+    case "notPublic": return t("{domain}: not a public domain, not looked up.", { domain });
+    case "capReached": return t("{domain}: not looked up; only 4 domains are.", { domain });
+    case "noSender": return t("The sender's address could not be read.");
+    default: return "";
+  }
 }

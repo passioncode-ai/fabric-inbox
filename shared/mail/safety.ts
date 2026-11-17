@@ -83,6 +83,49 @@ export interface MailCheck {
   contentHash: string;
 }
 
+/**
+ * S03c (B-288): what the lookup of a message's sender domains found, per domain. Run on request, never on arrival
+ * (`POST /api/safety/domains`); kept as `findings.domains` beside the six checks and read by `colourOf` only upward.
+ */
+export type DomainRole = "from" | "replyTo";
+export interface DomainSite {
+  /** The status of the last answer, or null when the site did not answer. */
+  status: number | null;
+  /** The address the visit ended on, and every host on the way (the first is the domain itself). */
+  finalUrl?: string;
+  hops: string[];
+  /** The visit ended on another registrable domain. */
+  leaves: boolean;
+  /** The page title, stripped of invisible characters and cut to 120 characters. */
+  title?: string;
+  password: boolean;
+  /** The root hands over a file, with its type when it named one. */
+  file?: string;
+  /** Why the visit stopped short: `noAnswer`, `tooManyRedirects`, `listedHop`, `lookalikeHop`, `notHttp`. */
+  stopped?: string;
+}
+export interface DomainFinding {
+  domain: string;
+  roles: DomainRole[];
+  rdap: "found" | "notFound" | "failed";
+  registered?: number;
+  expires?: number;
+  changed?: number;
+  registrar?: string;
+  status?: string[];
+  /** DNS: null where the read failed. `resolves` is false on NXDOMAIN; `dmarc` is the policy, or `absent` with no record. */
+  dns: { resolves: boolean | null; mx: string[]; spf: boolean | null; dmarc: string | null; failed?: boolean };
+  site?: DomainSite;
+  signals: { severity: Severity; code: string; facts?: CheckFact[] }[];
+}
+export interface DomainLookup {
+  version: 1;
+  at: number;
+  domains: DomainFinding[];
+  /** Domains not looked up, and why (`ownDomain`, `notPublic`, `capReached`), or `noSender` with no domain. */
+  notRun: { domain?: string; why: string }[];
+}
+
 /** The parts of a stored safety record the colour reads. */
 export interface SafetyLikeRecord {
   state: string;
@@ -90,7 +133,7 @@ export interface SafetyLikeRecord {
   findings: {
     visibleStrong?: string[]; hiddenSignals?: string[]; fileSignals?: string[]; model?: boolean; modelError?: string;
     phishing?: { host: string }[]; lookalikes?: { host: string; resembles?: string }[]; riskyFiles?: string[];
-    feed?: "missing" | "stale"; unreadFiles?: string[]; check?: MailCheck;
+    feed?: "missing" | "stale"; unreadFiles?: string[]; check?: MailCheck; domains?: DomainLookup;
   };
 }
 
@@ -110,6 +153,8 @@ const RED_SENDER = new Set(["mailSenderLookalikeDomain", "mailSenderBrandMismatc
 const SENDER_AMBER = new Set(["mailSenderReplyElsewhere", "inboxDmarcFail", "mailSenderSpfFail", "mailSenderDkimFail", "mailSenderNotAligned"]);
 
 const has = (list: unknown[] | undefined) => !!list && list.length > 0;
+/** S03c: every signal of a domain lookup; a lookup only ever raises the colour, never lowers it or makes it grey. */
+export const domainSignals = (lookup: DomainLookup | undefined) => lookup?.version === 1 ? lookup.domains.flatMap((d) => d.signals) : [];
 
 /** The registrable link signals that are floors. */
 export const linkIsRed = (l: CheckedLink) => l.why === "phishing" || l.why === "lookalike";
@@ -134,13 +179,15 @@ export function colourOf(record: SafetyLikeRecord | null | undefined, currentFee
   const red = has(f.phishing) || has(f.lookalikes) || has(f.riskyFiles) || has(f.visibleStrong) || has(f.hiddenSignals) || has(f.fileSignals)
     || !!check?.signals.some((s) => RED_SENDER.has(s.code))
     || !!check?.links.some(linkIsRed)
-    || !!check?.files.some((x) => x.colour === "red");
+    || !!check?.files.some((x) => x.colour === "red")
+    || domainSignals(f.domains).some((s) => s.severity === "critical");
   if (red) return withRelease({ colour: "red", label: "dangerous", linksComplete });
 
   const raised = !!check?.review?.ran && check.review.codes.some((c) => RAISING_CODES.includes(c));
   const otherAmber = !!f.model || raised
     || !!check?.signals.some((s) => !SENDER_AMBER.has(s.code))
-    || !!check?.files.some((x) => x.colour === "amber");
+    || !!check?.files.some((x) => x.colour === "amber")
+    || domainSignals(f.domains).some((s) => s.severity === "major");
   if (otherAmber) return withRelease({ colour: "amber", label: "suspicious", linksComplete });
   if (check?.signals.some((s) => SENDER_AMBER.has(s.code))) return withRelease({ colour: "amber", label: "senderForged", linksComplete });
 
@@ -245,6 +292,8 @@ export function asciiHost(host: string): string {
  * review code that raised the message. Null when nothing stops a send.
  */
 export function draftOnlyReason(record: SafetyLikeRecord | null | undefined): "sender" | "review" | null {
+  // S03c: a sender domain whose site is on the feed or imitates a watched name is a red floor of the sender too.
+  if (domainSignals(record?.findings?.domains).some((s) => s.severity === "critical")) return "sender";
   const check = record?.findings?.check;
   if (!check) return null;
   if (check.signals.some((s) => RED_SENDER.has(s.code))) return "sender";

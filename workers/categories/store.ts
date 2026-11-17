@@ -25,7 +25,8 @@ import { HEAD_BYTES, TAIL_BYTES } from "../safety/sniff";
 import { checkLinks, extractLinks } from "../safety/links";
 import { buildCheck, reviewOwed } from "../safety/verdict";
 import { contentHash, reviewCheck } from "../safety/check-review";
-import { colourOf, type CheckReview, type FileEntry, type MailCheck, type SafetyColour } from "../../shared/mail/safety";
+import { lookupComplete, lookupDomains, senderDomains } from "../safety/domains";
+import { colourOf, type CheckReview, type DomainLookup, type FileEntry, type MailCheck, type SafetyColour } from "../../shared/mail/safety";
 import { addresses } from "../safety/sender";
 import { splitHidden } from "../safety/hidden";
 import { reviewHeld, type SafetyReview } from "../safety/review";
@@ -92,6 +93,9 @@ export const DEFAULT_SAFETY_DAILY_CALLS = 2000;
 /** S03 (B-269): the review of mail that is not held: its own daily calls, and at most so many a day per sender domain. */
 export const DEFAULT_CHECK_REVIEW_DAILY_CALLS = 500;
 export const CHECK_REVIEW_PER_DOMAIN = 20;
+/** S03c (B-288): a domain lookup is answered from the record for a day, and at most this many run a day (each at most 40 requests, `MAX_REQUESTS`). */
+export const DOMAIN_LOOKUP_FRESH_MS = 86_400_000;
+export const DOMAIN_LOOKUPS_PER_DAY = 100;
 const HTML_CHARS = 100_000;
 import { safetyOn } from "../safety/on";
 import { FEED_REFRESH_MS, FEED_STALE_MS, linksOf, lookalikeLinks, phishingLinks, refreshFeed, type FeedEnv, type KeptFeed } from "../safety/feed";
@@ -791,6 +795,13 @@ export class CategoriesDO extends DurableObject<Env> {
       }
     }
     findings.check = check;
+    // S03c (B-288): a lookup of the sender's domains made on open, before this arrival ran, is kept: it is a person's
+    // or an agent's ask, and this write replaces the open-time row whole.
+    if (!findings.domains) {
+      const kept = this.sql.exec("SELECT json_extract(findings, '$.domains') AS d FROM safety WHERE account_id = ? AND message_id = ?", item.accountId, item.messageId)
+        .toArray()[0] as Row | undefined;
+      if (kept?.d) { try { findings.domains = JSON.parse(String(kept.d)) as DomainLookup; } catch { /* a damaged lookup is not carried */ } }
+    }
     this.sql.exec(`INSERT OR REPLACE INTO safety (account_id, message_id, state, findings, review, reason, checked_at, decided_by, decided_at, timestamp, subject, sender)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       item.accountId, item.messageId, state, JSON.stringify(findings), review ? JSON.stringify(review) : null, reason.slice(0, 300), now,
@@ -850,6 +861,39 @@ export class CategoriesDO extends DurableObject<Env> {
     console.log(JSON.stringify({ event: "safety_rechecked", account: key.accountId, scope: input.scope, signals: check.signals.length, notRun: check.notRun.length }));
     return (await this.safetyOf([key]))[safetyKey(key.accountId, key.messageId)] ?? null;
   }
+  /**
+   * S03c (B-288): looks up one message's sender domains (RDAP, DNS, the site's main page) and keeps the answer as
+   * `findings.domains`, beside the check and never in place of it: the state, review and check stay as they are. A
+   * lookup younger than DOMAIN_LOOKUP_FRESH_MS is answered from the record unless `refresh`; at most
+   * DOMAIN_LOOKUPS_PER_DAY run a day. The message must already have a record (the route checks it first).
+   */
+  async lookupSenderDomains(key: { accountId: string; messageId: string }, input: { fromLine: string; replyToLine?: string | null }, refresh = false):
+    Promise<{ record: SafetyRecord | null; limited?: true }> {
+    const now = Date.now();
+    const existing = (await this.safetyOf([key]))[safetyKey(key.accountId, key.messageId)];
+    if (!existing) return { record: null };
+    const kept = existing.findings.domains;
+    // A lookup that read everything is the answer for a day; one with a failed read may be asked again at once.
+    if (!refresh && kept?.version === 1 && now - kept.at < DOMAIN_LOOKUP_FRESH_MS && lookupComplete(kept)) return { record: existing };
+    const ownDomains = (this.env.DOMAINS ?? "").split(",").map((d) => d.trim()).filter(Boolean);
+    // A lookup with nothing to look up (only this server's own or non-public domains) asks no one and spends nothing.
+    const due = senderDomains(input.fromLine, input.replyToLine, ownDomains).domains.length > 0;
+    const today = new Date(now).toISOString().slice(0, 10);
+    const used = await this.ctx.storage.get<{ day: string; n: number }>("okolos:domain-lookups");
+    const n = used?.day === today ? used.n : 0;
+    if (due && n >= DOMAIN_LOOKUPS_PER_DAY) return { record: existing, limited: true };
+    if (due) await this.ctx.storage.put("okolos:domain-lookups", { day: today, n: n + 1 });
+    const feed = await this.phishingFeed(now).catch(() => null);
+    const lookup = await lookupDomains(input, { fetch: this.domainFetch(), feed: feed?.snapshot ?? null, ownDomains, now });
+    this.sql.exec("UPDATE safety SET findings = json_set(findings, '$.domains', json(?)) WHERE account_id = ? AND message_id = ?",
+      JSON.stringify(lookup), key.accountId, key.messageId);
+    console.log(JSON.stringify({ event: "safety_domains_looked_up", account: key.accountId, domains: lookup.domains.length,
+      signals: lookup.domains.reduce((sum, d) => sum + d.signals.length, 0), notRun: lookup.notRun.length }));
+    return { record: (await this.safetyOf([key]))[safetyKey(key.accountId, key.messageId)] ?? null };
+  }
+  /** S03c: the fetch the domain lookup uses (overridden in tests). */
+  protected domainFetch(): typeof fetch { return (input, init) => fetch(input, init); }
+
   /** A seam for tests: runs between the recheck's read and its write (R6-1). */
   protected async beforeCheckWrite(_key: { accountId: string; messageId: string }): Promise<void> {}
 

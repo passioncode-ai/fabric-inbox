@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { Link, useSearchParams, type MetaArgs } from "react-router";
 import {
   useInfiniteQuery,
+  useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -560,6 +561,22 @@ export default function UnifiedInbox() {
   // S03: the badge's panel is the reader's (A-2: drawn under the header); another message opens with it closed.
   const [safetyOpen, setSafetyOpen] = useState(false);
   useEffect(() => setSafetyOpen(false), [selected?.id]);
+  // S03c (B-288): the sender's domains looked up on request. The answer replaces the record of the message it was asked
+  // for, keyed by the request's own variables: a person who opened another message meanwhile keeps that one's record.
+  const domainLookup = useMutation({
+    mutationFn: (v: { accountId: string; messageId: string; refresh: boolean }) => fabric<{ record?: SafetyLikeRecord | null; feedVersion?: number | null }>(
+      "/api/safety/domains", { accountId: v.accountId, messageId: v.messageId, ...(v.refresh ? { refresh: true } : {}) }, "POST"),
+    onSuccess: (answer, v) => {
+      if (!answer.record) return;
+      client.setQueryData(["safety-check", v.accountId.toLowerCase(), v.messageId],
+        (old: { record: SafetyLikeRecord | null; feedVersion: number | null; unavailable: boolean } | undefined) =>
+          ({ record: answer.record ?? null, feedVersion: answer.feedVersion ?? old?.feedVersion ?? null, unavailable: false }));
+      // The conversation's cells and the list's rows carry the same colour: read again.
+      void client.invalidateQueries({ queryKey: ["thread-events"] });
+      void client.invalidateQueries({ queryKey: ["unified-inbox"] });
+    },
+  });
+  useEffect(() => domainLookup.reset(), [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const badgeShown = !!detail.data && showsSafetyBadge(detail.data.sent, safetyCheck.data?.record?.findings.check);
   const askedFiles = useRef(new Set<string>());
   // Opening an unread message marks it read once the body has loaded, as every
@@ -1821,7 +1838,11 @@ export default function UnifiedInbox() {
                             <SafetyPanel colour={safetyColour} record={safetyCheck.data?.record ?? null} failed={safetyCheck.isError}
                               onReportSpam={readOnlyIn(me, selected.accountId) || folder === "spam" || folder === "sent" ? undefined : reportSpamFromPanel}
                               onDiscard={readOnlyIn(me, selected.accountId) || folder === "discarded" ? undefined : () => void triageAction("discard", [selected])}
-                              onSaveAnyway={(f: FileEntry) => { const a = detail.data!.attachments.find((x) => x.id === f.id); if (a) void download(a, true); }} />
+                              onSaveAnyway={(f: FileEntry) => { const a = detail.data!.attachments.find((x) => x.id === f.id); if (a) void download(a, true); }}
+                              onLookUpDomains={safetyCheck.data?.unavailable ? undefined
+                                : (refresh) => domainLookup.mutate({ accountId: selected.accountId, messageId: selected.providerMessageId, refresh })}
+                              lookingUp={domainLookup.isPending}
+                              lookupError={domainLookup.error ? t.text((domainLookup.error as Error).message) : undefined} />
                           )}
                         </header>
                         {threaded ? (
