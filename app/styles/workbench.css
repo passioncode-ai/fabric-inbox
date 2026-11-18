@@ -1787,6 +1787,15 @@ body {
   color: var(--pc-text-muted);
   white-space: nowrap;
 }
+/* B-293 (U4): a shared mailbox's level when it is not read and send. */
+.fi-address-level {
+  font-size: 9px;
+  color: var(--pc-text-muted);
+  border: 1px solid var(--pc-border);
+  border-radius: 4px;
+  padding: 0 4px;
+  white-space: nowrap;
+}
 .fi-unread-count.is-stale { opacity: 0.55; }
 .fi-update-notice {
   position: fixed;

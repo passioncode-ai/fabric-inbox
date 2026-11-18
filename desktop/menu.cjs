@@ -45,7 +45,9 @@ function menuTemplate(platform, ctx) {
     { role: 'delete', label: t('Delete') }, { role: 'selectAll', label: t('Select All') },
     ...(mac ? [{ type: 'separator' }, { label: t('Speech'), submenu: [{ role: 'startSpeaking', label: t('Start Speaking') }, { role: 'stopSpeaking', label: t('Stop Speaking') }] }] : [])];
   // B-158: the servers the app holds, the one shown ticked; another is a click away, with its sign-in kept.
-  const held = ctx.servers ? [...ctx.servers.items.map((s) => ({ label: s.label, type: 'radio', checked: s.checked, click: s.click })),
+  // B-292 (U3): with two or more servers, every server's inboxes together, first.
+  const held = ctx.servers ? [...(ctx.servers.all ? [{ label: t("All Servers' Inboxes"), accelerator: 'CmdOrCtrl+Shift+0', click: ctx.servers.all }, { type: 'separator' }] : []),
+    ...ctx.servers.items.map((s) => ({ label: s.label, type: 'radio', checked: s.checked, click: s.click })),
     { label: t('Add Another Server…'), click: ctx.servers.add },
     // B-158 M1 step 3d (SCN-094): with two or more servers, an address can move from the one shown to another.
     ...(ctx.servers.move ? [{ label: t('Move an Address to Another Server…'), click: ctx.servers.move }] : []),

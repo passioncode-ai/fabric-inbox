@@ -3,7 +3,7 @@ import { SignInIcon, WarningIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useId, useMemo, useState, type ReactNode } from "react";
 import { useT } from "../../lib/i18n";
-import { consoleRunning, otherSettingsBridge, showServer, useHeldServers } from "../../lib/other-servers";
+import { consoleRunning, consoleStopsOnSwitch, otherSettingsBridge, showServer, useHeldServers } from "../../lib/other-servers";
 import {
 	addChoices, allModeFor, choiceAfterSection, isAllSection, otherItemPath, readMailChoseAll, readOtherSettings, settingsGroups,
 	type ServerState, type SettingsKind,
@@ -65,7 +65,7 @@ export function SettingsServersProvider({ section, children }: { section: Sectio
 	const go = useCallback(async (origin: string, path: string) => {
 		const target = held.find((s) => s.origin === origin);
 		if (!target) return;
-		if (await consoleRunning()) {
+		if (consoleStopsOnSwitch() && await consoleRunning()) {
 			const ok = await confirm({ title: t("The agent console session will stop"), confirmLabel: t("Open {server}", { server: target.label }) });
 			if (!ok) return;
 		}

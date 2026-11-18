@@ -85,6 +85,8 @@ export default function PeopleSection({ id }: { id: string | null }) {
     <PanelPlaceholder>
       <h2>{t("Share this server with other people")}</h2>
       <p>{t("Everyone on this list can sign in: the server lets them in, and your organization's own sign-in keeps working too. The list decides what each of them reaches: an administrator manages everything, a member reads and answers only the mailboxes you give them.")}</p>
+      {/* B-293 (U4): how the person then sees what was shared. */}
+      <p>{t("To share mailboxes with a person: add their address, choose the mailboxes and a level for each. They add this server to their Fabric Inbox app (Account → Add Another Server) and sign in with that address; the mailboxes appear in their sidebar under Shared with you.")}</p>
       {data?.open && <p>{t("Nobody is listed yet, so everyone who can sign in is an administrator. The first person you add makes you this server's administrator too.")}</p>}
       <button type="button" onClick={() => setAdding(true)}><PlusIcon size={16} /> {t("Add a person")}</button>
       <AuditBlock />

@@ -179,6 +179,7 @@ export const COMMON: Readonly<Record<string, string>> = {
 	"Sidebar width": "Ширина боковой панели",
 	"Mail list width": "Ширина списка писем",
 	"All inboxes": "Все входящие",
+	"Every inbox of every server": "Все входящие всех серверов",
 	"Archive": "Архив",
 	"Checking…": "Проверяем…",
 	"Choose a domain": "Выберите домен",

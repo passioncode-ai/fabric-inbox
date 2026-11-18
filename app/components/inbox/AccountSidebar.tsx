@@ -4,6 +4,7 @@ import { CaretDownIcon, CaretRightIcon, AtIcon, EnvelopeSimpleIcon, EyeIcon, Eye
 import type { InboxAccount } from "./model";
 import { englishT, type T } from "../../../shared/i18n";
 import { useT } from "../../lib/i18n";
+import { settingsPath } from "../settings/paths";
 import { escapeCancelsConfirmation } from "../../lib/mail-keys";
 import { addressLabel, FIND_FROM_GROUPS, groupAccounts, matchAccounts, sidebarAccounts, type AddressFilter } from "./account-groups";
 
@@ -22,6 +23,8 @@ interface Props {
   busy?: boolean;
   /** False for a member of a shared server (B-149): no adding, hiding or connecting, which are the administrator's. */
   canManage?: boolean;
+  /** B-293 (U4): a member's level on each shared mailbox (read, send, agents), by account id. */
+  levels?: Readonly<Record<string, string>>;
 }
 
 const FILTER_KEY = "fabric-inbox:address-filter";
@@ -50,7 +53,12 @@ export function syncLabel(a: { status: string; importing?: number }, t: T = engl
  * the last 7 days);
  * any address can be hidden, and hidden ones wait in their own list.
  */
-export default function AccountSidebar({ accounts, accountId, domain, provider = "", loading, onScope, hidden, onHidden, busy, canManage = true }: Props) {
+/** B-293 (U4): the short tag a shared mailbox shows when its level is not read and send. */
+export function levelTag(level: string | undefined, t: T): string {
+  return level === "read" ? t("read only") : level === "agents" ? t("agents") : "";
+}
+
+export default function AccountSidebar({ accounts, accountId, domain, provider = "", loading, onScope, hidden, onHidden, busy, canManage = true, levels }: Props) {
   const t = useT();
   const [filter, setFilterState] = useState<AddressFilter>("mail");
   useEffect(() => { setFilterState(readFilter()); }, []);
@@ -112,7 +120,7 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
   return (
     <>
       <div className="fi-section-label">
-        {t("ADDRESSES")}
+        {canManage ? t("ADDRESSES") : t("SHARED WITH YOU")}
         {canManage && <Link to="/settings/addresses?add=1" aria-label={t("Add an address")}>+</Link>}
       </div>
       {accounts.length > 0 && (
@@ -165,6 +173,7 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
                         aria-pressed={a.id === accountId} title={a.email}
                         onClick={() => onScope({ account: a.id, domain: "", provider: "" })}>
                         <span className="fi-address-name">{addressLabel(a, t)}</span>
+                        {levelTag(levels?.[a.id], t) && <span className="fi-address-level" title={t("Your level on this mailbox")}>{levelTag(levels?.[a.id], t)}</span>}
                         {(a.error || !["connected", "syncing"].includes(a.status)) ? (
                           <span className="fi-address-alert" title={t.text(a.error || a.status)}>{t("needs attention")}</span>
                         ) : syncLabel(a, t) && (
@@ -245,7 +254,8 @@ export default function AccountSidebar({ accounts, accountId, domain, provider =
           <Link className="fi-add-account" to="/settings/accounts?connect=imap" title={findable ? t("Connect other mail") : undefined}><EnvelopeSimpleIcon size={15} aria-hidden="true" /> <span className="fi-add-label">{t("Connect other mail")}</span></Link>
         </div>
       ) : (
-        <p className="fi-sidebar-empty">{t("You see the mailboxes this server's administrator gave you.")}</p>
+        <p className="fi-sidebar-empty">{t("You see the mailboxes this server's administrator gave you.")}{" "}
+          <Link to={settingsPath("app", "access")}>{t("What you can do here")}</Link></p>
       )}
     </>
   );

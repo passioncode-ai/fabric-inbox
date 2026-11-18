@@ -2371,7 +2371,7 @@ const requestAccess = defineTool({
 });
 const listMyAccess = defineTool({
   name: "list_my_access", title: "Show what this key holds and what it asked for", level: "read", anyKey: true, readOnly: true,
-  description: "This key's own access (B-246): its level and mailboxes, the grants it holds (each with its mailboxes and capabilities), and its access requests with their state (waiting, approved, refused, expired) and the decision's note. decides: false while grants are checked beside today's key levels and decide nothing yet.",
+  description: "This key's own access (B-246): its level and mailboxes, the grants it holds (each with its mailboxes and capabilities), and its access requests with their state (waiting, approved, refused, expired) and the decision's note. The same route read by a person signed in to the app answers their role, the mailboxes shared with them with each one's level, and the grants given to them by name (B-293). decides: false while grants are checked beside today's key levels and decide nothing yet.",
   input: {}, routes: ["GET /api/my-access"], call: (_a, ctx) => get(ctx, "/api/my-access"),
 });
 const listAccessRequests = defineTool({

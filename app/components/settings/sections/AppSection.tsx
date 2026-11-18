@@ -10,12 +10,15 @@ import { detectLocale, msg } from "../../../../shared/i18n";
 import { parseSetup, type ApplyResult, type Setup } from "../../../../shared/setup";
 import { type ListEntry } from "../list-model";
 import { settingsPath } from "../paths";
+import { YourAccess } from "../YourAccess";
 import { ActionResult, Badge, Panel, PanelBlock, PanelPlaceholder, SectionLayout, SelectableList, errorText, useNotify, useWork } from "../ui";
 
 const ITEMS = [
   { key: "appearance", title: msg("Appearance"), meta: msg("Light or dark") },
   { key: "language", title: msg("Language"), meta: msg("System, English or Русский") },
   { key: "server", title: msg("Your server"), meta: msg("Where this app's mail and agents run") },
+  // B-293 (U4): who I am here and what I reach.
+  { key: "access", title: msg("Your access"), meta: msg("Your role here, the mailboxes shared with you, and how sharing works") },
   { key: "setup", title: msg("Setup"), meta: msg("Apply, import or export a setup") },
   { key: "desktop", title: msg("Mac app"), meta: msg("Updates, usage counts and the server address") },
 ] as const;
@@ -34,7 +37,7 @@ export default function AppSection({ id }: { id: string | null }) {
   );
   const panel = !id ? (
     <PanelPlaceholder><h2>{t("Choose what to change")}</h2><p>{t("The theme, the language, your server, setups and the Mac app.")}</p></PanelPlaceholder>
-  ) : id === "appearance" ? <AppearancePanel /> : id === "language" ? <LanguagePanel /> : id === "server" ? <ServerPanel /> : id === "setup" ? <SetupPanel /> : id === "desktop" ? <DesktopPanel /> : (
+  ) : id === "appearance" ? <AppearancePanel /> : id === "language" ? <LanguagePanel /> : id === "server" ? <ServerPanel /> : id === "access" ? <Panel title={t("Your access")} closeTo={settingsPath("app")}><PanelBlock><YourAccess /></PanelBlock></Panel> : id === "setup" ? <SetupPanel /> : id === "desktop" ? <DesktopPanel /> : (
     <PanelPlaceholder><h2>{t("There is no such page")}</h2><Link className="fi-secondary" to={settingsPath("app")} replace>{t("App")}</Link></PanelPlaceholder>
   );
   return <SectionLayout section="app" hasSelection={!!id} list={list} panel={panel} />;
