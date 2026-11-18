@@ -64,12 +64,12 @@ its own licence and notices inside the combined work.
 
 - **Upstream:** the [Public Suffix List](https://publicsuffix.org/), as curated in Okolos
   (`passioncode-ai/okolos` `packages/core-lookalike/src/suffixes.json`, copied at `5d664c5` and
-  unchanged at the current pin `aa5dc1ddce78d32f60f7bfd802096e7949ccb0e6`).
+  unchanged at the current pin `52d4da0d36d1a71d2fced6bf3bb3505c31d9f3ac`).
 - **Files:** `vendor/okolos/core-lookalike/suffixes.json`, unmodified (its hash is pinned in
   `vendor/okolos/manifest.json`); it is a subset of the list, not the whole list.
 - **Licence:** Mozilla Public License 2.0, <https://mozilla.org/MPL/2.0/>. The rest of the vendored
   Okolos code (`core-injection`, `core-feeds`, `core-lookalike`, and since B-269 `core-mail` and
-  `core-download`, all at `aa5dc1ddce78d32f60f7bfd802096e7949ccb0e6`) is PassionCode's own and
+  `core-download`, all at `52d4da0d36d1a71d2fced6bf3bb3505c31d9f3ac`) is PassionCode's own and
   carries this repository's licence, `AGPL-3.0-only OR LicenseRef-PassionCode-Commercial`
   (`vendor/okolos/README.md`).
 

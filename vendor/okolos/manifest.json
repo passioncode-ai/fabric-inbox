@@ -1,6 +1,6 @@
 {
   "source": "https://github.com/passioncode-ai/okolos",
-  "commit": "aa5dc1ddce78d32f60f7bfd802096e7949ccb0e6",
+  "commit": "52d4da0d36d1a71d2fced6bf3bb3505c31d9f3ac",
   "files": {
     "core-injection/signals.ts": {
       "from": "packages/core-injection/src/signals.ts",
@@ -20,7 +20,7 @@
     },
     "core-lookalike/check.ts": {
       "from": "packages/core-lookalike/src/check.ts",
-      "sha256": "4f401948cbb8da771eed1333cd1c855870b71c123ca431f44898cac95c5b0cb9"
+      "sha256": "f8d9688eeda1cf0a360fbfc5bf586f6458997aa5a53a410b1a209258af31e90a"
     },
     "core-lookalike/confusables.ts": {
       "from": "packages/core-lookalike/src/confusables.ts",
@@ -40,7 +40,7 @@
     },
     "core-lookalike/watchlist.ts": {
       "from": "packages/core-lookalike/src/watchlist.ts",
-      "sha256": "4323c6697780c7dc5fad02cee11ba289261dd4ffe3edf11de7bf00d68f3a62f8"
+      "sha256": "d58a3a0cf97c08dc53eb1a012e635fdab38e205744e69885e652099515ca7143"
     },
     "core-lookalike/index.ts": {
       "from": "packages/core-lookalike/src/index.ts",
@@ -64,7 +64,7 @@
     },
     "core-download/judge.ts": {
       "from": "packages/core-download/src/judge.ts",
-      "sha256": "cf303128c6c9513cc6f9e63ba6dcd2927b5148d2cc12ae1a2ed82723c20fce87"
+      "sha256": "3170333e9ee7f0ea9b65ed68100e34a6c324126af9d596ca4ffec755359cce4f"
     }
   }
 }
