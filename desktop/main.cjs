@@ -288,12 +288,22 @@ async function learnContext(snapshot) {
     installMenu();
   } catch { /* the menu keeps the host alone; the next sign-in tries again */ }
 }
+/** B-291 (U2): the server switch's choice for every page of the window: "all", "own", or null until a page chose. */
+let serverTab = null;
+/** Keeps the switch's choice and tells every page of the window but the one that chose it. */
+function setServerTab(tab, chooser = null) {
+  const next = tab === 'all' ? 'all' : 'own';
+  if (serverTab === next) return next;
+  serverTab = next;
+  if (mailViews) mailViews.each((view) => { if (!view.webContents.isDestroyed() && mailViews.originOf(view.webContents) !== chooser) view.webContents.send('fabric:server-tab', next); });
+  return next;
+}
 /** Shows another remembered server: its own sign-in is kept, so nothing is entered again. */
 async function switchServer(origin) {
   const target = servers.find((s) => s.origin === origin);
   if (!target || (config && config.origin === origin && mailPage())) { if (mailWindow && !mailWindow.isDestroyed()) mailWindow.focus(); return; }
-  // A console works for one server with that server's key: it stops before the window shows another.
-  if (agentConsole && agentConsole.running() && consoleFor !== origin) await agentConsole.stop({ wait: true, timeoutMs: 5000 });
+  // B-291 (U2): a running console stays with its own server and key; its panel hides while another server is shown
+  // (showPage) and comes back with its server. Quit, an update's restart and Forget Server still stop it.
   await saveConfig({ origin: target.origin, accessOrigin: target.accessOrigin });
   logEvent({ event: 'server_switched', context: target.context || 'unknown' });
   loadMail();
@@ -432,6 +442,7 @@ function showRename(origin) {
 /** B-244 D-3: the inbox of the server shown, with All chosen (a notification about mail on several servers opens it). */
 async function showAllMail() {
   if (!config) return false;
+  setServerTab('all');
   return openOnServer(config.origin, '/?servers=all');
 }
 function installRenameIPC() {
@@ -501,6 +512,10 @@ function installServersBridgeIPC() {
   });
   // S11: whether an agent console session runs, so the page says before a switch of server that it will stop (switchServer).
   ipcMain.handle('fabric:console-running', (event) => { from(event); return !!(agentConsole && agentConsole.running()); });
+  // B-291 (U2): the server switch's choice is the window's, not each page's: All chosen on one server's page is All on
+  // every page, and a server's own segment shows that server's own list.
+  ipcMain.handle('fabric:server-tab', (event) => { from(event); return serverTab; });
+  ipcMain.handle('fabric:server-tab-set', (event, tab) => setServerTab(tab, from(event)));
   // Shows a held server in this window, at one of its paths when given (a message link); false when refused.
   ipcMain.handle('fabric:show-server', async (event, origin, link) => {
     from(event);
@@ -510,7 +525,42 @@ function installServersBridgeIPC() {
     return openOnServer(target, link);
   });
 }
+/**
+ * B-294 (U5): while the saved server does not answer, the setup window shows its Retry view and the app asks the server
+ * every 30 s (and when the computer wakes) through its own session; the mail opens again once it answers. Asking first
+ * means no mail window is made and closed again while the server is away.
+ */
+let offlineRetry = null;
+const OFFLINE_RETRY_MS = 30000;
+let setupOffline = false;
+function stopOfflineRetry() { if (offlineRetry) { clearTimeout(offlineRetry); offlineRetry = null; } }
+async function serverAnswers() {
+  if (!config) return false;
+  try {
+    const response = await session.fromPartition(policy.partitionFor(config)).fetch(config.origin, { method: 'HEAD', redirect: 'manual', signal: AbortSignal.timeout(10000) });
+    return response.status > 0;
+  } catch { return false; }
+}
+async function retryIfAnswers() {
+  if (!config || !setupWindow || setupWindow.isDestroyed()) { stopOfflineRetry(); return; }
+  if (!(await serverAnswers())) return;
+  logEvent({ event: 'offline_retry', outcome: 'connected' });
+  stopOfflineRetry();
+  retryMail();
+}
+function startOfflineRetry() {
+  if (offlineRetry) return;
+  const next = () => {
+    offlineRetry = setTimeout(async () => { await retryIfAnswers(); if (offlineRetry) next(); }, OFFLINE_RETRY_MS);
+    if (offlineRetry && typeof offlineRetry.unref === 'function') offlineRetry.unref();
+  };
+  next();
+}
 function showSetup(message = '', start = '') {
+  // B-294 (U5): the Retry view already shown stays as it is (no reload every time a retry fails).
+  if (start === 'offline' && setupOffline && setupWindow && !setupWindow.isDestroyed()) { notice = message; return; }
+  setupOffline = start === 'offline';
+  if (!setupOffline) stopOfflineRetry();
   notice = message;
   setupStart = start;
   if (setupWindow && !setupWindow.isDestroyed()) {
@@ -523,7 +573,7 @@ function showSetup(message = '', start = '') {
   setupWindow.webContents.on('will-redirect', event => event.preventDefault());
   setupWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   setupWindow.webContents.on('will-attach-webview', event => event.preventDefault());
-  setupWindow.on('closed', () => { setupWindow = null; });
+  setupWindow.on('closed', () => { setupWindow = null; setupOffline = false; stopOfflineRetry(); });
   // B-105: the first page drawn (or not) is said in the log, so a launch check sees a window, not only startup.
   setupWindow.webContents.once('did-finish-load', () => logEvent({ event: 'window_shown', window: 'setup' }));
   setupWindow.webContents.once('did-fail-load', (_event, code) => logEvent({ event: 'window_shown', window: 'setup', outcome: 'failed', code }));
@@ -609,6 +659,9 @@ function mailFrame() {
   mailWindow = win;
   mailViews = views;
   win.on('resize', layoutPages);
+  // B-290 (U1): full screen, maximize, Stage Manager and restore can end with bounds 'resize' did not report;
+  // lay out again then and on the next frame, so the docked console always ends at the window's right edge.
+  for (const name of dockRelayoutEvents) win.on(name, () => { layoutPages(); setTimeout(layoutPages, 50); });
   win.on('page-title-updated', event => event.preventDefault());
   win.on('closed', () => {
     views.clear();
@@ -628,7 +681,12 @@ function layoutPages() {
 function showPage(origin, { fresh = false } = {}) {
   if (!mailViews || !mailViews.get(origin)) return false;
   // The console belongs to the server it was started for: its panel is not shown over another server's page.
-  if (consoleDocked && consoleFor && consoleFor !== origin) toggleDock();
+  if (consoleDocked && consoleFor && consoleFor !== origin) { toggleDock(); consoleHiddenBySwitch = true; }
+  // B-291 (U2): the panel a switch hid comes back with its server while its session still runs.
+  else if (!consoleDocked && consoleHiddenBySwitch && consoleFor === origin) {
+    consoleHiddenBySwitch = false;
+    if (agentConsole && agentConsole.running() && dockReadyPages.has(origin)) toggleDock();
+  }
   mailViews.show(origin);
   mailOrigin = origin;
   layoutPages();
@@ -687,7 +745,8 @@ function loadMail() {
     mailFailed = true;
     // B-11: a window that could not load is closed, not kept hidden; Retry makes a new one.
     win.destroy();
-    showSetup(t('Fabric Inbox could not reach the server. Check your connection, then retry. Mail is not available offline in this version.'));
+    showSetup(t('Fabric Inbox could not reach the server. Check your connection, then retry. Mail is not available offline in this version.'), 'offline');
+    startOfflineRetry();
   };
   const navigate = (kind) => (event, url, _inPlace, isMainFrame) => {
     if (policy.navigation(url, snapshot) === 'internal') return;
@@ -741,6 +800,7 @@ function loadMail() {
     if (page.isDestroyed() || win.isDestroyed() || loadFailed) return;
     if (shown()) { win.show(); win.setTitle('Fabric Inbox'); }
     logEvent({ event: 'window_shown', window: 'mail' });
+    stopOfflineRetry();
     if (setupWindow && !setupWindow.isDestroyed()) setupWindow.close();
     // A chosen setup is applied by the server's Setup page once the person is
     // signed in there (the page loads only behind Access).
@@ -753,7 +813,7 @@ function loadMail() {
       // A console still running for the previous server revokes its key while that server's session
       // still holds its sign-in; retiring the partition first left the key live (bug hunt 2026-10-12).
       void (async () => {
-        if (agentConsole && agentConsole.running() && consoleFor !== snapshot.origin) await agentConsole.stop({ wait: true, timeoutMs: 5000 });
+        if (agentConsole && agentConsole.running() && consoleFor && policy.partitionFor({ origin: consoleFor }) === retiring) await agentConsole.stop({ wait: true, timeoutMs: 5000 });
         if (mailViews) mailViews.dropPartition(retiring);
         await retirePartition(retiring);
       })();
@@ -1166,10 +1226,16 @@ let consoleDocked = false;
 const dockReadyPages = new Set();
 const dockReadyNow = () => !!(mailViews && mailViews.current() && dockReadyPages.has(mailViews.current().origin));
 const DOCK_WIDTH = 520;
+/** B-290 (U1): the window's events after which its pages and the docked console are laid out again. */
+const dockRelayoutEvents = ['resized', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'restore'];
 let agentConsole = null;
 /** 829e673d: whether the console's agent skips permission prompts (on unless the person turned it off; read at start). */
 let consoleSkip = true;
 let consoleFor = null;
+/** B-291 (U2): the docked panel was hidden because another server's page was shown, not by the person. */
+let consoleHiddenBySwitch = false;
+/** The name of the server the console works for, as the menu shows it. */
+const consoleServerLabel = () => { const s = servers.find((x) => x.origin === consoleFor); return s ? serverList.labelFor(s, t) : ''; };
 let loginPathValue;
 let lastRuntime = null;
 const consoleAvailable = () => !process.mas;
@@ -1215,6 +1281,7 @@ function layoutDock() {
 /** Shows or hides the docked panel; the session in it keeps running while hidden. */
 function toggleDock() {
   if (!mailWindow || mailWindow.isDestroyed()) return;
+  consoleHiddenBySwitch = false;
   if (consoleDocked) {
     mailWindow.contentView.removeChildView(consoleView);
     consoleDocked = false;
@@ -1234,6 +1301,12 @@ function toggleDock() {
   layoutDock();
   consoleView.webContents.focus();
 }
+/** B-290 (U1): hides the docked panel, or closes the console window; the session in it keeps running. */
+function hideConsole() {
+  if (consoleDocked) toggleDock();
+  if (consoleWindow && !consoleWindow.isDestroyed()) consoleWindow.close();
+  if (mailWindow && !mailWindow.isDestroyed() && mailWindow.isVisible()) { const page = mailPage(); if (page) page.focus(); }
+}
 async function ensureConsole() {
   if (!config || !consoleAvailable()) return null;
   if (agentConsole && consoleFor === config.origin) return agentConsole;
@@ -1246,7 +1319,7 @@ async function ensureConsole() {
     origin: config.origin, mcpUrl: new URL('/mcp', config.origin).href, cwd: app.getPath('home'), loginPath: await loginPath(),
     log: logEvent, skipPermissions: () => consoleSkip,
     onData: (data) => consoleSend('fabric:console-data', data),
-    onState: (state) => { consoleSend('fabric:console-phase', { ...state, runtimes: consoleRuntimes(loginPathValue) }); installMenu(); },
+    onState: (state) => { consoleSend('fabric:console-phase', { ...state, server: consoleServerLabel(), runtimes: consoleRuntimes(loginPathValue) }); installMenu(); },
   });
   return agentConsole;
 }
@@ -1374,7 +1447,7 @@ function installIPC() {
     fromConsole(event);
     const c = await ensureConsole();
     const runtimes = consoleRuntimes(await loginPath());
-    return { ...(c ? c.state() : { phase: 'idle' }), runtimes, lastRuntime, output: c ? c.output() : '' };
+    return { ...(c ? c.state() : { phase: 'idle' }), server: consoleServerLabel(), runtimes, lastRuntime, output: c ? c.output() : '' };
   });
   ipcMain.handle('fabric:console-start', async (event, input) => {
     fromConsole(event);
@@ -1387,6 +1460,8 @@ function installIPC() {
     if (!out.ok && out.error === 'sign_in') loadMail();
     return out;
   });
+  // B-290 (U1): the console's own close button: the docked panel hides, the window closes; a session keeps running.
+  ipcMain.handle('fabric:console-hide', (event) => { fromConsole(event); hideConsole(); return true; });
   ipcMain.handle('fabric:console-stop', async (event) => { fromConsole(event); if (agentConsole) await agentConsole.stop(); return true; });
   ipcMain.on('fabric:console-write', (event, data) => { try { fromConsole(event); } catch { return; } if (agentConsole) agentConsole.write(String(data)); });
   ipcMain.on('fabric:console-resize', (event, cols, rows) => { try { fromConsole(event); } catch { return; } if (agentConsole) agentConsole.resize(Number(cols), Number(rows)); });
@@ -1396,7 +1471,8 @@ function installIPC() {
   ipcMain.handle('fabric:setup-state', event => {
     trusted(event);
     const start = setupStart; setupStart = '';
-    return { config, notice, start, setups: bundledSetups.map(s => ({ id: s.id, ...s.summary })) };
+    const held = config ? servers.find((s) => s.origin === config.origin) : null;
+    return { config, notice, start, server: config ? serverList.labelFor(held || config, t) : '', setups: bundledSetups.map(s => ({ id: s.id, ...s.summary })) };
   });
   ipcMain.handle('fabric:setup-open-file', async event => {
     trusted(event);
@@ -1569,7 +1645,9 @@ function installMenu() {
     consoleSkip: consoleAvailable() ? { checked: consoleSkip, click: (item) => { void consoleCore.writeSkip(fs, app.getPath('userData'), item.checked).then((on) => { consoleSkip = on; logEvent({ event: 'console_permissions', skip: on }); installMenu(); }); } } : null,
     openSettings, showServer: () => showSetup(), showCloudflare: () => showSetup('', 'cloudflare'),
     servers: {
-      items: servers.map((s) => ({ label: serverList.labelFor(s, t), checked: !!config && s.origin === config.origin, click: () => void switchServer(s.origin) })),
+      // B-291 (U2): a server chosen here shows its own list; B-292 (U3): every server's inboxes together, a click away.
+      items: servers.map((s) => ({ label: serverList.labelFor(s, t), checked: !!config && s.origin === config.origin, click: () => { setServerTab('own'); void switchServer(s.origin); } })),
+      all: servers.length > 1 && config ? () => void showAllMail() : null,
       add: () => showSetup(),
       move: servers.length > 1 && config ? () => showMove() : null,
       forget: servers.filter((s) => !config || s.origin !== config.origin).map((s) => ({ label: serverList.labelFor(s, t), click: () => void forgetServer(s.origin) })),
@@ -1678,6 +1756,7 @@ if (ownsInstance) app.whenReady().then(async () => {
   // The Mac woke from sleep: the open mail window reads new mail now instead of at its next poll
   // (P1-4). An event, not a timer: nothing runs here while the Mac sleeps or no window is open.
   if (electron.powerMonitor) electron.powerMonitor.on('resume', () => {
+    if (offlineRetry) void retryIfAnswers();
     if (mailViews) mailViews.each((view) => { if (!view.webContents.isDestroyed()) view.webContents.send('fabric:resumed'); });
   });
   // Orphan partitions and settings leftovers go before any window opens (LC-12). An unreadable

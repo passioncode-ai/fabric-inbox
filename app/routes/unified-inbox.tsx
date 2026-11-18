@@ -97,8 +97,9 @@ import { triageText } from "~/components/inbox/triage-text";
 import { metaT, useT, type T } from "~/lib/i18n";
 import { msg } from "../../shared/i18n";
 import { useWindowActive } from "~/hooks/useWindowActive";
-import ServerTabs from "~/components/inbox/ServerTabs";
-import { useHeldServers, useOtherInbox } from "~/lib/other-servers";
+import ServerTabs, { switchCounts } from "~/components/inbox/ServerTabs";
+import type { SwitchCount } from "~/components/ServerSwitch";
+import { readServerTab, serverTabBridge, useHeldServers, useOtherInbox, type ServerTab } from "~/lib/other-servers";
 import { outlookSecretSetupPath, settingsPath } from "~/components/settings/paths";
 import { GMAIL_REASON_TEXT, isGmailReason } from "../../shared/mail/gmail-reasons";
 import type { SecretExpiry } from "../../shared/mail/microsoft-setup";
@@ -309,17 +310,39 @@ export default function UnifiedInbox() {
   // server's own.
   const heldServers = useHeldServers();
   const [mergeAll, setMergeAll] = useState(() => {
-    // `?servers=all`: the app opens All (a notification about new mail on several servers).
+    // `?servers=all`: the app opens All (a notification about new mail on several servers, a message opened from All).
     if (params.get("servers") === "all") return true;
+    if (params.get("servers") === "own") return false;
     try { return window.localStorage.getItem("fi-server-tab") !== "own"; } catch { return true; }
   });
+  // B-291 (U2): the switch's choice is the window's: the app keeps it for every server's page and tells the others.
   const chooseServerTab = (all: boolean) => {
     setMergeAll(all);
     try { window.localStorage.setItem("fi-server-tab", all ? "all" : "own"); } catch { /* kept for this page only */ }
+    void serverTabBridge()?.setServerTab(all ? "all" : "own").catch(() => {});
   };
   useEffect(() => {
-    if (params.get("servers") !== "all") return;
-    chooseServerTab(true);
+    const bridge = serverTabBridge();
+    if (!bridge) return;
+    let live = true;
+    const apply = (tab: ServerTab) => {
+      setMergeAll(tab === "all");
+      try { window.localStorage.setItem("fi-server-tab", tab); } catch { /* kept for this page only */ }
+    };
+    const off = bridge.onServerTab(apply);
+    void bridge.serverTab().then((value) => {
+      if (!live || params.get("servers") === "all") return;
+      const tab = readServerTab(value);
+      // No page chose since the app started: this page's own last choice becomes the window's.
+      if (tab) apply(tab); else void bridge.setServerTab(mergeAll ? "all" : "own").catch(() => {});
+    }).catch(() => {});
+    return () => { live = false; off(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    const asked = params.get("servers");
+    if (asked !== "all" && asked !== "own") return;
+    chooseServerTab(asked === "all");
     setParams((old) => { const next = new URLSearchParams(old); next.delete("servers"); return next; }, { replace: true, preventScrollReset: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
@@ -449,6 +472,14 @@ export default function UnifiedInbox() {
   const hiddenQuery = useQuery({ queryKey: ["hidden-accounts"], queryFn: () => fabric<{ hidden: string[] }>("/api/inbox/hidden"), staleTime: 60_000 });
   const hidden = new Set((hiddenQuery.data?.hidden ?? accounts.filter((a) => a.hidden).map((a) => a.id)).map((x) => x.toLowerCase()));
   const shownAccounts = accounts.filter((a) => !hidden.has(a.id.toLowerCase()));
+  // B-292 (U3): "All inboxes" covers every server the app holds; its count is every server's unread.
+  const everyServer = heldServers.length > 1;
+  const unscoped = !accountId && !domainFilter && !categoryParam && !providerFilter;
+  const shownServerLabel = heldServers.find((s) => s.shown)?.label ?? "";
+  const allInboxesActive = unscoped && (!everyServer || mergeAll);
+  const allInboxesUnread: SwitchCount = everyServer
+    ? switchCounts(heldServers, otherInbox.data?.servers ?? [], totalUnread(shownAccounts) ?? 0).all
+    : { n: totalUnread(shownAccounts) ?? 0 };
   const stuck = accounts.filter((a) => a.provider === "cloudflare" && a.stuck && (a.stuck.dead || a.stuck.retrying));
   const messages = pinTriage(Array.from(
     new Map(
@@ -1230,18 +1261,20 @@ export default function UnifiedInbox() {
           </Link>
         )}
         <div className="fi-section-label">{t("WORKSPACE")}</div>
+        {/* B-292 (U3): with two or more servers, "All inboxes" is every inbox of every server (the switch's All). */}
         <button
-          className={"fi-nav-item" + (!accountId && !domainFilter && !categoryParam && !providerFilter ? " is-active" : "")}
-          aria-pressed={!accountId && !domainFilter && !categoryParam && !providerFilter}
-          onClick={() => scope({ account: "", domain: "", category: "", provider: "" })}
+          className={"fi-nav-item" + (allInboxesActive ? " is-active" : "")}
+          aria-pressed={allInboxesActive}
+          title={everyServer ? t("Every inbox of every server") : undefined}
+          onClick={() => { scope({ account: "", domain: "", category: "", provider: "" }); if (everyServer) chooseServerTab(true); }}
         >
           <TrayArrowDownIcon
             size={20}
             weight={!accountId ? "fill" : "regular"}
           />
           <span>{t("All inboxes")}</span>
-          {!!totalUnread(shownAccounts) && (
-            <span className="fi-counter" aria-label={t.plural(totalUnread(shownAccounts)!, { one: "{n} unread", other: "{n} unread" })}>{totalUnread(shownAccounts)}</span>
+          {!!allInboxesUnread.n && (
+            <span className="fi-counter" aria-label={t.plural(allInboxesUnread.n, { one: "{n} unread", other: "{n} unread" })}>{allInboxesUnread.n}{allInboxesUnread.more ? "+" : ""}</span>
           )}
         </button>
         <nav aria-label={t("Mail folders")} className="fi-folders">
@@ -1271,6 +1304,7 @@ export default function UnifiedInbox() {
           hidden={hidden}
           busy={busy}
           canManage={!isMember}
+          levels={isMember ? me.data?.levels ?? undefined : undefined}
           onHidden={(change) => perform(async () => {
             const r = await fabric<{ hidden: string[] }>("/api/inbox/hidden", change, "PUT");
             client.setQueryData(["hidden-accounts"], r);
@@ -1510,12 +1544,14 @@ export default function UnifiedInbox() {
                 {search
                   ? t("Search results")
                   : t.text(folders.find((f) => f[0] === folder)?.[1] ?? "")}
+                {/* B-292 (U3): only inboxes merge; under All another folder is the server shown's own, and says which. */}
+                {!search && folder !== "inbox" && everyServer && mergeAll && shownServerLabel ? ` · ${shownServerLabel}` : ""}
               </strong>
               {marked.size > 1 ? <span>{TT.selected(marked.size)}</span>
                 : serverTabs ? (
                   // S01 (B-267): the server switch sits in the heading; the order hint stays on the Focus/Newest control.
                   <ServerTabs servers={heldServers} states={otherInbox.data?.servers ?? []} mergeAll={mergeAll}
-                    ownUnread={totalUnread(accounts) ?? 0} onChoose={chooseServerTab} onRetry={() => void otherInbox.refetch()} />
+                    ownUnread={totalUnread(shownAccounts) ?? 0} onChoose={chooseServerTab} onRetry={() => void otherInbox.refetch()} />
                 ) : <span>{t(view === "focus" ? "Important first" : "Newest first")}</span>}
             </div>
             <div className="fi-filter-bar" role="toolbar" aria-label={t("List view and filters")}>

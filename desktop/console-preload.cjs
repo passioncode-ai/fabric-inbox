@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('fabricConsole', Object.freeze({
   locale: () => ipcRenderer.invoke('fabric:console-locale'),
   start: (input) => ipcRenderer.invoke('fabric:console-start', { runtime: String(input.runtime), level: String(input.level), resume: !!input.resume, cols: Number(input.cols), rows: Number(input.rows) }),
   stop: () => ipcRenderer.invoke('fabric:console-stop'),
+  hide: () => ipcRenderer.invoke('fabric:console-hide'),
   write: (data) => ipcRenderer.send('fabric:console-write', String(data)),
   resize: (cols, rows) => ipcRenderer.send('fabric:console-resize', Number(cols), Number(rows)),
   onData: listen('fabric:console-data', (v) => String(v)),

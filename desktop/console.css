@@ -12,3 +12,6 @@ body { display: flex; flex-direction: column; background: var(--fi-bg, #fff); co
 button.primary { background: var(--fi-accent, #2563eb); color: #fff; border: 0; border-radius: 6px; padding: 6px 14px; }
 button.secondary { background: transparent; border: 1px solid var(--fi-border, #ccc); border-radius: 6px; padding: 6px 14px; color: inherit; }
 button.small { padding: 3px 10px; font-size: 13px; }
+button.close { background: transparent; border: 0; border-radius: 6px; width: 28px; height: 28px; font-size: 20px; line-height: 1; color: var(--fi-muted, #666); cursor: pointer; }
+button.close:hover { background: var(--fi-hover, rgba(0,0,0,.06)); color: inherit; }
+button.close:focus-visible { outline: 2px solid var(--fi-accent, #2563eb); outline-offset: 1px; }

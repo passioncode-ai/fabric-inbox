@@ -39,7 +39,7 @@ const ready = (window.fabricSetup.locale ? window.fabricSetup.locale() : Promise
   .then(lang => { if (lang && lang.locale === 'ru' && lang.messages && typeof lang.messages === 'object') { LOCALE = 'ru'; MESSAGES = lang.messages; } })
   .catch(() => {})
   .then(applyLanguage);
-const steps = { welcome: $('#step-welcome'), cloudflare: $('#step-cloudflare'), review: $('#step-review'), manual: $('#step-manual') };
+const steps = { welcome: $('#step-welcome'), cloudflare: $('#step-cloudflare'), review: $('#step-review'), manual: $('#step-manual'), offline: $('#step-offline') };
 const notice = $('#notice');
 let chosen = null;
 
@@ -107,6 +107,12 @@ ready.then(() => window.fabricSetup.state()).then(state => {
   // A saved server goes straight to its settings; a first run starts at the welcome;
   // Connect Cloudflare account… (menu) opens that step directly.
   if (state.start === 'cloudflare') void openCloudflare();
+  // B-294 (U5): the saved server did not answer: the Retry view, never the address form first.
+  else if (state.start === 'offline' && state.config) {
+    $('#offline-server').textContent = t('Fabric Inbox could not reach {server}.', { server: state.server || state.config.origin });
+    say('');
+    show('offline');
+  }
   else show(state.config ? 'manual' : 'welcome');
 }).catch(() => say(t('Setup could not be loaded. Close the window and reopen Fabric Inbox.')));
 
@@ -143,6 +149,14 @@ form.addEventListener('submit', async event => {
     else { say(t('Opening your server. Complete sign-in in the mail window.')); $('#retry').hidden = false; }
   } catch { fail($('#error'), t('The server setting could not be saved. Try again.')); }
   finally { setBusy(false); }
+});
+$('#offline-change').addEventListener('click', () => show('manual'));
+$('#offline-retry').addEventListener('click', async () => {
+  const button = $('#offline-retry');
+  button.disabled = true; fail($('#offline-error'), '');
+  try { await window.fabricSetup.retry(); }
+  catch { fail($('#offline-error'), t('The connection could not be started. Try again.')); }
+  finally { button.disabled = false; }
 });
 $('#retry').addEventListener('click', async () => {
   setBusy(true); fail($('#error'), '');

@@ -38,11 +38,16 @@ function say(text) { $('#status').textContent = text; }
 function show(state) {
   running = state.phase === 'running' || state.phase === 'starting';
   $('#stop').hidden = state.phase !== 'running';
+  // B-290 (U1): the close button hides the panel (or closes the window); a running session keeps running.
+  const closeLabel = running ? t('Hide the console; the session keeps running') : t('Close the console');
+  $('#close').setAttribute('aria-label', closeLabel);
+  $('#close').title = closeLabel;
   $('#choose').hidden = running || !state.runtimes?.length;
   $('#none').hidden = running || !!state.runtimes?.length;
   $('#terminal').hidden = !running && state.phase !== 'ended';
   if (state.phase === 'starting') say(t('Making a key for this session…'));
   else if (state.phase === 'running' && state.quiet) say(t('{agent} has had no output and no input for 30 minutes. It is still running with its key; stop it if you are done.', { agent: state.runtimeName || state.runtime }));
+  else if (state.phase === 'running' && state.server) say(t('{agent} is connected to {server}.', { agent: state.runtimeName || state.runtime, server: state.server }));
   else if (state.phase === 'running') say(t('{agent} is connected to Fabric Inbox.', { agent: state.runtimeName || state.runtime }));
   else if (state.phase === 'ended') say(state.keyRevoked === false
     ? t('The session ended; its key could not be revoked: revoke it in Settings → Agent access.')
@@ -73,6 +78,14 @@ $('#new').addEventListener('click', () => void start(false));
 $('#continue').addEventListener('click', () => void start(true));
 $('#stop').addEventListener('click', () => {
   if (window.confirm(t('Stop the agent? Its key is revoked.'))) void window.fabricConsole.stop();
+});
+
+$('#close').addEventListener('click', () => void window.fabricConsole.hide());
+// Escape closes the console only when no session runs: while one runs, Escape is the agent's.
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || running || event.defaultPrevented || event.isComposing) return;
+  event.preventDefault();
+  void window.fabricConsole.hide();
 });
 
 window.fabricConsole.onData((data) => ensureTerminal().write(data));

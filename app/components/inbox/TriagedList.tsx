@@ -8,7 +8,7 @@ import { useT, type T } from "../../lib/i18n";
 import { agentRunLabel, agentRunNeedsLook } from "./agent-run";
 import { draftWaits, statusRepeatsDraft } from "./draft-card";
 import { replyStateLabel, replyStateOpen } from "./reply-state";
-import { interleave, showServer, type OtherRow } from "../../lib/other-servers";
+import { interleave, linkWithAll, showServer, type OtherRow } from "../../lib/other-servers";
 
 /** The group, or the specific reason an automated message was raised (e.g. "Payment problem"). */
 function tagText(tri: Triage, t: T): string {
@@ -48,7 +48,7 @@ function OtherMessageRow({ row }: { row: OtherRow }) {
       type="button"
       className={"fi-message fi-message-other" + (!row.read ? " is-unread" : "")}
       title={t("Opens on {server}", { server: row.server })}
-      onClick={() => showServer(row.origin, row.link)}
+      onClick={() => showServer(row.origin, linkWithAll(row.link))}
     >
       <div className="fi-row-top">
         <strong>

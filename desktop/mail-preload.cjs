@@ -34,6 +34,19 @@ contextBridge.exposeInMainWorld('fabricDesktop', Object.freeze({
   // switch of server would stop it. No data of one server is sent to another.
   otherSettings: (kind) => ipcRenderer.invoke('fabric:other-settings', String(kind)),
   consoleRunning: () => ipcRenderer.invoke('fabric:console-running'),
+  // B-291 (U2): a switch of server no longer stops a running console (it stays with its server); a page that sees
+  // this answers no "the session will stop" question.
+  consoleKeepsOnSwitch: () => true,
+  // B-291 (U2): the window's one choice of the server switch, "all" or "own" (null until a page chose), kept by the
+  // app for every server's page, and heard when another page changes it. No data of a server crosses.
+  serverTab: () => ipcRenderer.invoke('fabric:server-tab'),
+  setServerTab: (tab) => ipcRenderer.invoke('fabric:server-tab-set', tab === 'all' ? 'all' : 'own'),
+  onServerTab: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, tab) => callback(tab === 'all' ? 'all' : 'own');
+    ipcRenderer.on('fabric:server-tab', listener);
+    return () => ipcRenderer.removeListener('fabric:server-tab', listener);
+  },
   // Receive-only: the page passes a callback and gets back its unsubscribe; no data crosses.
   onResume: (callback) => {
     if (typeof callback !== 'function') return () => {};
