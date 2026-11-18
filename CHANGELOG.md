@@ -5,7 +5,11 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
-## Unreleased
+## 1.8.0 (2026-11-18)
+
+One update for everything since 1.7.3: the mail window's fixes of the operator's note of 2026-11-18 (B-290 to B-294, below) and the scoped key's listing (B-289). Windows installers are not Authenticode-signed yet; SmartScreen warns once. Verify them with `SHA256SUMS`.
+
+**Your access on a server without its own sign-in** (B-293, W3 walk). On a server that has no Cloudflare Access yet (local development, a fresh server), Your access read as an error; it now says you manage the server, as the rest of the app does. Basis: `tests/my-access-person.test.ts`; seen in the walk of the built window with two servers.
 
 **The agent console closes, and a switch of server no longer stops it** (B-290, B-291, [plan](docs/ux/plans/2026-11-18-ui-fixes/README.md) U1, U2; the operator, 2026-11-18, with a screenshot of the console after its session ended: «нельзя его закрыть»). The console's bar always has a close button (and Escape when no session runs): the docked panel hides, the window closes, a running session keeps running. The docked panel is laid out again after full screen, maximize and restore, so it always ends at the window's right edge. A running console now stays with its own server when the window shows another one; its panel comes back with its server and its bar names it. Basis: `tests/ui-fixes-w1.test.ts`; the app's log showed a switch stopping a console in the same second (2026-11-17 00:53:54, 01:24:23).
 

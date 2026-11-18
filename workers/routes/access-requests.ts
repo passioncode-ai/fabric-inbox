@@ -82,6 +82,8 @@ accessRequestsRouter.get("/api/my-access", async (c) => {
       return c.json({ person: { email: standing.email, role: standing.role, mailboxes }, grants, decides: false });
     } catch (error) { return failure(c, error); }
   }
+  // Without Access (local development) and with no caller named, the person is the administrator, as GET /api/me says.
+  if (!keyId && !actorOf(c.req.raw, null)) return c.json({ person: { email: null, role: "admin", mailboxes: null }, grants: [], decides: false });
   if (!keyId) return c.json({ error: msg("Only an agent key reads its own access here.") }, 400);
   try {
     const key = (await readAgentKeys(c.env.BUCKET)).find((k) => k.id === keyId);

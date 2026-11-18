@@ -45,6 +45,12 @@ test("an administrator reads that they reach everything (no mailbox list); a per
   assert.equal((await asPerson(undefined, env, "boss@acme.example")).status, 400);
 });
 
+test("with no Access and no caller (local development) the person is the administrator, as GET /api/me says", async () => {
+  const out = await asPerson(undefined, { BUCKET: bucket() });
+  assert.equal(out.status, 200);
+  assert.deepEqual(out.body.person, { email: null, role: "admin", mailboxes: null });
+});
+
 test("an agent key (no person's standing) still reads its key's access", async () => {
   const env = { BUCKET: bucket({ "agent-keys.json": { keys: [] } }) };
   const out = await asPerson(undefined, env, "key:k1");

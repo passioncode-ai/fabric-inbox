@@ -502,6 +502,7 @@ export const SETTINGS: Readonly<Record<string, string>> = {
 	"your access": "ваш доступ",
 	"This server does not say yet what you reach. Ask its administrator.": "Этот сервер пока не сообщает, что вам доступно. Спросите его администратора.",
 	"You are {email} here: {role}.": "Здесь вы {email}: {role}.",
+	"You manage this server: nobody signs in through its own sign-in yet.": "Вы управляете этим сервером: вход через его собственную авторизацию пока не настроен.",
 	"You reach every mailbox of this server.": "Вам доступны все ящики этого сервера.",
 	"Share mailboxes with people": "Дать людям доступ к ящикам",
 	"You reach every mailbox: you read and sort mail and set up addresses and agents; you never send.": "Вам доступны все ящики: вы читаете и разбираете почту, настраиваете адреса и агентов, но не отправляете.",
