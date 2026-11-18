@@ -5,6 +5,10 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
+## Unreleased
+
+**The sender's site naming Tesla, SpaceX, X, NVIDIA or BlackRock is flagged** (B-297, asked of Okolos on the board on 2026-11-17 after a forged investment enquiry; Okolos PR #63). The vendored Okolos code moves to one pin, `52d4da0d`: its watchlist adds the brands investment and giveaway scams wear, so a stranger's site titled with one of them now reads as suspicious in the safety panel (`inboxDomainSiteBrand`), and a lookalike of their domains is caught. The one-letter `x` never matches a word in a title. The same pin adds seven file types to the downloads judged as programs (`.theme`, `.themepack`, `.website`, `.xbap`, `.psm1`, `.onetoc2`, `.mof`). Basis: `tests/safety-domains.test.ts`, `tests/okolos-vendor.test.ts`.
+
 ## 1.8.0 (2026-11-18)
 
 One update for everything since 1.7.3: the mail window's fixes of the operator's note of 2026-11-18 (B-290 to B-294, below) and the scoped key's listing (B-289). Windows installers are not Authenticode-signed yet; SmartScreen warns once. Verify them with `SHA256SUMS`.
