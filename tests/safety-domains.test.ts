@@ -174,6 +174,16 @@ test("a site whose title names a watched brand on another domain is suspicious; 
   assert.equal(brandIn(undefined, DEFAULT_WATCHLIST), null);
 });
 
+test("the brands investment and giveaway scams wear are watched (Okolos PR #63); the one-letter x is never a word match", () => {
+  assert.equal(brandIn("Tesla SpaceX Inc", DEFAULT_WATCHLIST), "tesla.com");
+  assert.equal(brandIn("SpaceX Investor Portal", DEFAULT_WATCHLIST), "spacex.com");
+  assert.equal(brandIn("NVIDIA Shareholder Rewards", DEFAULT_WATCHLIST), "nvidia.com");
+  assert.equal(brandIn("BlackRock Crypto Fund", DEFAULT_WATCHLIST), "blackrock.com");
+  assert.ok(DEFAULT_WATCHLIST.includes("x.com"));
+  assert.equal(brandIn("Follow us on X", DEFAULT_WATCHLIST), null);
+  assert.equal(brandIn("Teslas and Trucks", DEFAULT_WATCHLIST), null);
+});
+
 test("the whole lookup: the screenshot's case, a Reply-To registered three days ago on a stranger's domain", async () => {
   const d = deps((url) => {
     if (url.hostname === "rdap.org") return rdap("2026-11-14T09:00:00Z");
@@ -185,7 +195,8 @@ test("the whole lookup: the screenshot's case, a Reply-To registered three days 
   assert.deepEqual(lookup.notRun, [{ domain: "shop.example", why: "ownDomain" }]);
   const [d0] = lookup.domains;
   assert.deepEqual([d0!.domain, d0!.registrar, d0!.dns.mx, d0!.site?.title], ["brand-invest.example", "Example Registrar, Inc.", ["mx.privateemail.example"], "Tesla SpaceX Inc"]);
-  assert.deepEqual(d0!.signals.map((s) => s.code), ["inboxDomainNew"]);
+  // Since Okolos PR #63 watches tesla.com, the title naming Tesla on a stranger's domain fires too.
+  assert.deepEqual(d0!.signals.map((s) => s.code), ["inboxDomainNew", "inboxDomainSiteBrand"]);
   // A name that does not resolve has no site to visit.
   const nx = deps((url) => url.hostname === "rdap.org" ? new Response("", { status: 404 }) : url.hostname === "cloudflare-dns.com" ? json({ Status: 3 }) : page(""));
   const gone = await lookupDomains({ fromLine: "x@gone.example" }, nx);

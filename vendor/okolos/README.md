@@ -1,7 +1,7 @@
 # Okolos detectors (vendored)
 
-Copied from [passioncode-ai/okolos](https://github.com/passioncode-ai/okolos) at `aa5dc1ddce78d32f60f7bfd802096e7949ccb0e6`
-(Okolos `main`, 2026-11-12; the files first copied at `5d664c5` are unchanged at that pin), unchanged except for two
+Copied from [passioncode-ai/okolos](https://github.com/passioncode-ai/okolos) at `52d4da0d36d1a71d2fced6bf3bb3505c31d9f3ac`
+(Okolos `main`, 2026-11-17, PR #63; the files first copied at `5d664c5` are unchanged at that pin), unchanged except for two
 rewrites: relative imports drop their `.js` extension (this repository's bundlers resolve TypeScript sources without
 it), and a bare `@okolos/<pkg>` import becomes the relative vendored path (`@okolos/core-lookalike` is
 `../core-lookalike/index`):
