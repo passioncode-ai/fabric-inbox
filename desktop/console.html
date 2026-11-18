@@ -19,6 +19,8 @@
   <span id="status" class="status" role="status" aria-live="polite"></span>
   <span class="grow"></span>
   <button type="button" id="stop" class="secondary small" hidden data-i18n>Stop</button>
+  <!-- B-290 (U1): the panel or window always closes from its own bar; a running session keeps running. -->
+  <button type="button" id="close" class="close" aria-label="Close the console" title="Close the console">&times;</button>
 </header>
 <section id="choose" class="choose" hidden>
   <p data-i18n>Your coding agent runs here, connected to this Fabric Inbox: ask it to do anything the app does. It gets its own key for this session, revoked when the session ends.</p>

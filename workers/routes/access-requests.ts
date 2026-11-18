@@ -65,10 +65,23 @@ accessRequestsRouter.post("/api/access-requests", async (c) => {
   } catch (error) { return failure(c, error); }
 });
 
-/** What the asking key holds now: its key's level and limit, its grants, its requests. */
+/**
+ * What the asking key holds now: its key's level and limit, its grants, its requests. B-293 (U4, SCN-105): a signed-in
+ * person reads their own access the same way: their role here, the mailboxes they reach with each one's level, and the
+ * grants given to them as a person (by whom, when, why).
+ */
 accessRequestsRouter.get("/api/my-access", async (c) => {
   c.header("Cache-Control", "no-store");
   const keyId = keyOf(c);
+  const standing = c.get("standing");
+  if (!keyId && standing) {
+    try {
+      const email = standing.email.toLowerCase();
+      const grants = (await readGrants(c.env.BUCKET)).filter((g) => g.holder.kind === "person" && g.holder.email.toLowerCase() === email);
+      const mailboxes = standing.role === "member" ? standing.accounts.map((id) => ({ id, level: standing.levels[id] ?? "send" })) : null;
+      return c.json({ person: { email: standing.email, role: standing.role, mailboxes }, grants, decides: false });
+    } catch (error) { return failure(c, error); }
+  }
   if (!keyId) return c.json({ error: msg("Only an agent key reads its own access here.") }, 400);
   try {
     const key = (await readAgentKeys(c.env.BUCKET)).find((k) => k.id === keyId);

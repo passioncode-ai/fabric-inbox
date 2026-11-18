@@ -79,7 +79,8 @@ export default function ServerTabs({ servers, states, mergeAll, ownUnread, onCho
 		onChoose: (choice: string) => {
 			if (choice === "all") onChoose(true);
 			else if (choice === shown?.origin) onChoose(false);
-			else showServer(choice);
+			// B-291 (U2): a server's own segment shows that server's own list, never its page's last choice.
+			else { onChoose(false); showServer(choice); }
 		},
 		onRetry: () => onRetry(), onSignIn: (origin: string) => showServer(origin),
 	};

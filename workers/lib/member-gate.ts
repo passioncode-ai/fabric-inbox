@@ -7,7 +7,8 @@ import { accountOfPath, adminMailboxAction, FEED_ROUTES, normaliseAccountId, SAF
 import { MCP_PATH } from "../mcp/keys";
 
 /** Routes any signed-in person may call: who they are on this server. */
-export const SELF_ROUTES = new Set(["GET /api/me"]);
+// B-293 (U4): a member reads their own access (their mailboxes, levels and the grants given to them).
+export const SELF_ROUTES = new Set(["GET /api/me", "GET /api/my-access"]);
 
 /**
  * `readonly`: a mailbox of theirs they may only read (B-160), asked to change something or send. `agents`: the

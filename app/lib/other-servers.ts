@@ -157,3 +157,36 @@ export function useOtherInbox(enabled: boolean, active: boolean) {
 export function showServer(origin: string, link?: string): void {
 	void serversBridge()?.showServer(origin, link).catch(() => {});
 }
+
+/** B-291 (U2): the server switch's choice, kept by the app for every server's page of the window. */
+export type ServerTab = "all" | "own";
+interface ServerTabBridge {
+	serverTab(): Promise<unknown>;
+	setServerTab(tab: ServerTab): Promise<unknown>;
+	onServerTab(callback: (tab: ServerTab) => void): () => void;
+}
+/** The app's keeper of the switch's choice; null in a browser and in a desktop build older than B-291. */
+export function serverTabBridge(): ServerTabBridge | null {
+	if (!serversBridge()) return null;
+	const bridge = (window as unknown as { fabricDesktop?: Partial<ServerTabBridge> }).fabricDesktop;
+	return typeof bridge?.serverTab === "function" && typeof bridge.setServerTab === "function" && typeof bridge.onServerTab === "function"
+		? (bridge as ServerTabBridge)
+		: null;
+}
+/** A tab the bridge answered, or null when it has none yet (no page chose since the app started). */
+export function readServerTab(value: unknown): ServerTab | null {
+	return value === "all" || value === "own" ? value : null;
+}
+/** B-291 (U2): whether a switch of server would stop a running console; a build that keeps it says so. */
+export function consoleStopsOnSwitch(): boolean {
+	if (typeof window === "undefined") return true;
+	const bridge = (window as unknown as { fabricDesktop?: { consoleKeepsOnSwitch?: () => unknown } }).fabricDesktop;
+	try { return !(typeof bridge?.consoleKeepsOnSwitch === "function" && bridge.consoleKeepsOnSwitch() === true); } catch { return true; }
+}
+/** B-291 (U2): a message of another server opened from All keeps All on that server's page (`?servers=all`). */
+export function linkWithAll(link: string): string {
+	const at = link.indexOf("?");
+	const params = new URLSearchParams(at < 0 ? "" : link.slice(at + 1));
+	params.set("servers", "all");
+	return (at < 0 ? link : link.slice(0, at)) + "?" + params.toString().replace(/\+/g, "%20");
+}

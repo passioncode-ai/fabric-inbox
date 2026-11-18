@@ -7,6 +7,16 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+**The agent console closes, and a switch of server no longer stops it** (B-290, B-291, [plan](docs/ux/plans/2026-11-18-ui-fixes/README.md) U1, U2; the operator, 2026-11-18, with a screenshot of the console after its session ended: «нельзя его закрыть»). The console's bar always has a close button (and Escape when no session runs): the docked panel hides, the window closes, a running session keeps running. The docked panel is laid out again after full screen, maximize and restore, so it always ends at the window's right edge. A running console now stays with its own server when the window shows another one; its panel comes back with its server and its bar names it. Basis: `tests/ui-fixes-w1.test.ts`; the app's log showed a switch stopping a console in the same second (2026-11-17 00:53:54, 01:24:23).
+
+**All stays All** (B-291, U2; «переключение аккаунтов иногда происходит»). A message of another server opened from All opens on its server with All still chosen, and a server's own segment shows that server's own list: the switch's choice is the window's, kept by the app for every server's page, not each page's memory. Basis: `tests/ui-fixes-w1.test.ts`.
+
+**Mailboxes shared with you, and how sharing works** (B-293, U4, SCN-105; «где шаренные аккаунты, которые поделятся мне, как вот это происходит делегация»). On a server where you are a member, the sidebar's heading reads Shared with you and each mailbox you may only read says so; Settings → App → Your access (and a member's settings page) names your role, the mailboxes shared with you with each one's level, the grants given to you by name (by whom, when, why) and how sharing works; Settings → People says how a person then sees what was shared. `GET /api/my-access` answers a signed-in person too, and `list_my_access` says so. Basis: `tests/my-access-person.test.ts`.
+
+**A server that does not answer at launch is not a setup** (B-294, U5; the app's log on 2026-11-18 showed setup opening at launch with a server set up, the network not up yet after waking). The setup window opens on its Retry view, naming the server, with Try again now and Change server…; the app asks the server every 30 seconds and when the computer wakes, and opens the mail as soon as it answers. Basis: `tests/desktop-setup-retry.test.ts`.
+
+**All inboxes means every server** (B-292, U3; «я не понял, как выбрать сразу же все аккаунты»). With two or more servers, the sidebar's All inboxes chooses All and counts every server's unread, the Account menu opens All Servers' Inboxes (⇧⌘0), and Sent, Drafts, Archive or Trash under All name the server they show. Basis: `tests/ui-fixes-w1.test.ts`.
+
 **A key limited to many mailboxes lists each once, in seconds** (B-289, reported on the board on 2026-11-17, request `fc525261`). A read key limited to `domain:<domain>` with 40 addresses got 1,600 rows from `list_accounts` (each address 40 times) after 46 s: the merged All inboxes read each mailbox's feed one after another, and every page lists all the key's mailboxes. Each mailbox and each feed-wide issue is now kept once, and the feeds are read 8 at a time, in order. A member of a workspace whose access names several mailboxes gets the same fix in the app. Basis: the two B-289 cases of `tests/mcp-scope.test.ts`.
 
 ## 1.7.3 (2026-11-17)

@@ -27,6 +27,7 @@ import DiscardSection from "~/components/settings/sections/DiscardSection";
 import AgentAccessSection from "~/components/settings/sections/AgentAccessSection";
 import AppSection from "~/components/settings/sections/AppSection";
 import PeopleSection from "~/components/settings/sections/PeopleSection";
+import { YourAccess } from "~/components/settings/YourAccess";
 import { useMe } from "~/lib/me";
 import { metaT, useT } from "~/lib/i18n";
 import { msg } from "../../shared/i18n";
@@ -75,6 +76,8 @@ export default function Settings() {
 				<div className="fi-panel-placeholder">
 					<h2>{t("Settings are for this server's administrators")}</h2>
 					<p>{t("You read and answer the mail of the mailboxes shared with you. To get another mailbox, or a change in how this server works, ask its administrator.")}</p>
+					{/* B-293 (U4): what is shared with me and how sharing works. */}
+					<YourAccess />
 					<MemberAgents />
 					<Link to="/" className="fi-secondary">{t("Back to mail")}</Link>
 				</div>
