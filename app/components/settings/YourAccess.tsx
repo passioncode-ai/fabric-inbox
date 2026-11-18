@@ -13,7 +13,7 @@ type Level = "read" | "send" | "agents";
 type Role = "admin" | "member" | "architect" | "none";
 interface PersonGrant { id: string; mailboxes: string[]; can: string[]; expiresAt: string | null; grantedBy: string; grantedAt: string; why: string }
 /** `GET /api/my-access` as a signed-in person reads it (workers/routes/access-requests.ts). */
-export interface MyAccess { person: { email: string; role: Role; mailboxes: { id: string; level: Level }[] | null }; grants: PersonGrant[] }
+export interface MyAccess { person: { email: string | null; role: Role; mailboxes: { id: string; level: Level }[] | null }; grants: PersonGrant[] }
 export const MY_ACCESS_KEY = ["my-access"];
 /** A grant's capabilities by the names Agent access gives them (GrantsPanel). */
 const CAPABILITY: Record<string, string> = {
@@ -33,7 +33,7 @@ export function roleText(role: Role, t: T): string {
 /** A member's answer to their own access; null in a browser or on a server before B-293 (the route answers 400 there). */
 export function readMyAccess(value: unknown): MyAccess | null {
   const v = value as Partial<MyAccess> | null;
-  if (!v || !v.person || typeof v.person.email !== "string" || typeof v.person.role !== "string") return null;
+  if (!v || !v.person || (typeof v.person.email !== "string" && v.person.email !== null) || typeof v.person.role !== "string") return null;
   return { person: { email: v.person.email, role: v.person.role, mailboxes: Array.isArray(v.person.mailboxes) ? v.person.mailboxes : null }, grants: Array.isArray(v.grants) ? v.grants : [] };
 }
 
@@ -48,7 +48,7 @@ export function YourAccess() {
   const { person, grants } = me;
   return (
     <div className="fi-your-access">
-      <p>{t("You are {email} here: {role}.", { email: person.email, role: roleText(person.role, t) })}</p>
+      <p>{person.email ? t("You are {email} here: {role}.", { email: person.email, role: roleText(person.role, t) }) : t("You manage this server: nobody signs in through its own sign-in yet.")}</p>
       {person.role === "admin" && <p>{t("You reach every mailbox of this server.")} <Link to={settingsPath("people")}>{t("Share mailboxes with people")}</Link></p>}
       {person.role === "architect" && <p>{t("You reach every mailbox: you read and sort mail and set up addresses and agents; you never send.")}</p>}
       {person.mailboxes && (
