@@ -107,6 +107,25 @@ npm run mcp:docs                                       # the agent protocol's to
   reaches the agent signals server by its MCP grant, which is neither channel; the storage warning (B-206 step 2) and
   the access-request notice (B-246 D-4) are designed on this rule. The exact service and tool names are in the agents
   base's R33 O9 and the operator's own rules on his machine, not in this public repository.
+- **A wait is improvement time (R33 O10)** (operator, 2026-11-16: «пока ждем переносим улучшения между агентами ПМ
+  разны организаций, это сделай правило все наши агентов чтобы пока они ждут они обменивались информацией с агентом
+  аритектором как они себя могут улучшить»; agents base decision D-56, relayed on the board in request `b3e2714d`).
+  When an agent working on Inbox, or Inbox's own reply agents and triage (template `support-answerer`), waits and no
+  independent task is ready by priority: it gives the agent architect what it learned since its last exchange (a trap,
+  a fix, a pattern, a measured win, with a commit, a `file:line` or a test), asks the architect's consult what of the
+  base and of the other copies of its template it has not taken (the version in its template receipt against the
+  current one), and files what applies as rows of [docs/evidence/backlog.md](docs/evidence/backlog.md), done by
+  priority. The architect advises and never holds; copies of one template exchange only through it, and no
+  organization's data crosses.
+- **Etalons live on PassionCode.ai (R33 O11)** (operator, 2026-11-17: «все синхронизируем, проверяем, что наша
+  главная фабрика, эталонная, находится на passion коде, как и все остальные, передать всем агентам, которых я вот тут
+  разрабатываю, что эталоны всегда на passion коде находятся, мы от них всегда строим и в базе данных агентов
+  храним»; agents base decision D-61, relayed on the board in request `6b41acb1`). Inbox's reply agent and triage
+  follow the `support-answerer` template, whose etalon is its template repository on PassionCode.ai, rendered from
+  the agents database. A change to them is built from that etalon at the template's current version, never from
+  another copy or a personal repository; an improvement goes to the base first (an `agents_db.contribute` or
+  `agents.improve` request), then the etalon is rendered again, then Inbox takes the version. A change to the agent
+  ends with the base's `template_repo.py stale` empty for its template.
 - **Every function of the app is an agent tool, in the same change** (operator, 2026-09-29). A new
   or changed route gets its tool in `workers/mcp/tools.ts` (or an exclusion with its reason in
   `NOT_TOOLS`), then `npm run mcp:docs` regenerates [docs/agents/mcp.md](docs/agents/mcp.md), and
@@ -228,7 +247,7 @@ Closing the window destroys it and its renderer; the app keeps running with no w
 | Rename Server (`desktop/rename-server.*`, B-244 D-4, SCN-099) | the person (Account → Rename Server) | none: the name is saved in `servers.json` on this Mac | nothing | closing its window | 0 |
 | The agent console (`desktop/console.cjs`, B-70, SCN-078): the person's own `claude` or `codex` in a PTY (node-pty), not in the Mac App Store package | the person (View → Agent Console, ⌃⌘T / Ctrl+Shift+T, the inbox's console button) | one session at a time: one agent key made for it (`POST /api/agent-keys` through the signed-in session), the login shell's PATH read once (5 s at most); one unref'd timer while a session runs, which logs `quiet` once after 30 minutes with no output and no input and shows it in the console (B-261, SL-3) | the panel on the mail window's right (or a window, for an older server's page) shows it; hidden, the session runs on until stopped | Stop (hang-up to the process group, kill 2 s later), the agent exiting, or quitting the app (asked first while one runs); the key is revoked every way, and a key a crash left is revoked before the next session | 0 when no session runs |
 
-The app owns **one login item (Open at Login, the person can turn it off), one more timer only while new-mail notifications are on, one watcher on its own profile folder for the switch files (B-236, `desktop/profile-watch.cjs`; no timer), no launchd label, no listening port, no long-lived child process but the agent console's own CLI while the person runs a session (Squirrel.Mac's `ShipIt` installs a downloaded update as the app quits; `ditto`, `codesign` and `plutil` run once while an update is verified), no
+The app owns **one login item (Open at Login, the person can turn it off), one more timer only while new-mail notifications are on, one more while the server set up does not answer and the setup window shows its Retry view (B-294: a HEAD of the server every 30 s through its own session, stopped when the mail loads or the window closes), one watcher on its own profile folder for the switch files (B-236, `desktop/profile-watch.cjs`; no timer), no launchd label, no listening port, no long-lived child process but the agent console's own CLI while the person runs a session (Squirrel.Mac's `ShipIt` installs a downloaded update as the app quits; `ditto`, `codesign` and `plutil` run once while an update is verified), no
 per-session server and no Keychain item read on a timer**. The agent protocol (`/mcp`) is served by
 the Worker, not the Mac. Cookie encryption (an Electron fuse, `desktop/hardening.mjs`) creates one
 Keychain item, "Fabric Inbox Safe Storage", on first launch; Chromium reads it in-process, and a
