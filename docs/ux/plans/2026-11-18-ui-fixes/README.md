@@ -12,7 +12,7 @@
   copy check for every string in both locales, `sheleg-design` for the look.
 - **Recon:** read on `main` `c273d3dc`; every "Today" line cites `file:line` at that commit. The Mac app's own log on
   the operator's Mac (codes only) was read for the switches and the launch on 2026-11-18.
-- **Status:** specs written (this file); W1 (U1 to U3) and W2 (U4, U5) built on `agent/ui-fixes-2026-11-18` with unit tests; W3 (the walk in the built app, the audit, the release) next.
+- **Status:** W1 and W2 merged in #589 (`c740f23b`); W3 walk done (below) and its one defect fixed; released in 1.8.0.
 
 ## The asks and their specs
 
@@ -191,3 +191,26 @@ rows with their evidence. Then the release: 1.8.0, with everything merged since 
 
 Each wave lands as its own pull request with its tests, Russian strings in `shared/i18n/ru/` (and the console's and
 the setup's own dictionaries in `desktop/locales/ru.json`), the SCN lines and a CHANGELOG line.
+
+## W3 walk, 2026-11-18
+
+The desktop app from the merged tree (`npx electron desktop`, a throwaway profile, `--remote-debugging-port`), holding
+two servers that are one local server under two addresses (`http://127.0.0.1:5182` named Own, `http://localhost:5182`
+named Acme), driven over the Chrome DevTools Protocol page by page.
+
+| Step | Seen |
+|---|---|
+| Open the window | The sidebar's All inboxes pressed, its tooltip "Every inbox of every server"; the heading's switch All · Own · Acme with All current; the app's choice `all` |
+| Choose Own | All inboxes not pressed, Own current; the app's choice `own` |
+| Click All inboxes | All inboxes pressed, All current; the app's choice `all` |
+| Choose Acme | Acme's page shown (`server_switched`), Acme current, its list its own; the app's choice `own` |
+| Back to Own from Acme's switch | Own's own list |
+| Open the console | Docked on the right, 520 px, the mail making room for exactly 520 px; the close button visible, "Close the console" |
+| Its close button; open again, Escape | The panel hides both times and the mail takes the room back (0 px) |
+| Settings → App → Your access | **Defect:** read as an error on a server without Access; fixed in 1.8.0 ("You manage this server: nobody signs in through its own sign-in yet."), then seen as fixed |
+
+Not walked, said as the weaker claim: the member's view (a local server has no Access, so everyone is its
+administrator; covered by `tests/my-access-person.test.ts` and the sidebar code), full screen and Stage Manager (the
+walk drives pages, not the window; the relayout events are covered by `tests/ui-fixes-w1.test.ts`), a narrow window,
+and a message opened from All on another server (the local servers had no mail; the link is covered by the unit test).
+Screenshots are kept outside the repository.
