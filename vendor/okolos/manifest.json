@@ -1,6 +1,6 @@
 {
   "source": "https://github.com/passioncode-ai/okolos",
-  "commit": "52d4da0d36d1a71d2fced6bf3bb3505c31d9f3ac",
+  "commit": "009df1f3388b378380c9413caaa2582f3162f170",
   "files": {
     "core-injection/signals.ts": {
       "from": "packages/core-injection/src/signals.ts",
@@ -36,7 +36,7 @@
     },
     "core-lookalike/suffixes.json": {
       "from": "packages/core-lookalike/src/suffixes.json",
-      "sha256": "e5cc14c27c9a5ebfcdc6e3985dfd0b9812fda473ef06416148ee6e2e2bad2e81"
+      "sha256": "494bd20a14f5f2bc990b95f056079ae03eed7591a0f136df9eb29357c3047abf"
     },
     "core-lookalike/watchlist.ts": {
       "from": "packages/core-lookalike/src/watchlist.ts",
@@ -65,6 +65,70 @@
     "core-download/judge.ts": {
       "from": "packages/core-download/src/judge.ts",
       "sha256": "3170333e9ee7f0ea9b65ed68100e34a6c324126af9d596ca4ffec755359cce4f"
+    },
+    "core-collect/collect.ts": {
+      "from": "packages/core-collect/src/collect.ts",
+      "sha256": "22e07c42b851e4e14c80e1c4d05f72be56b56db135329a70ffef20af31a062ee"
+    },
+    "core-collect/tree.ts": {
+      "from": "packages/core-collect/src/tree.ts",
+      "sha256": "b8a5f165ce80726a212b8afbaef6b6524f3d95ac26ff75fc629eb4e2d88a1968"
+    },
+    "core-collect/view.ts": {
+      "from": "packages/core-collect/src/view.ts",
+      "sha256": "7edd3b7860aa9ee2b40bb2e60210db8ee443fac0f7253401dc8e88281c38fb59"
+    },
+    "core-collect/index.ts": {
+      "from": "packages/core-collect/src/index.ts",
+      "sha256": "8c2b941ac3aa13dd5b5599ba79c3a80b92a4d9c10cec1f55a1ab7e0cadc82d90"
+    },
+    "core-injection/stage1.ts": {
+      "from": "packages/core-injection/src/stage1.ts",
+      "sha256": "ce0d47029172774bd742e9a1cdda7d145da94da8a8d0e6de5a6f3a5438312ff0"
+    },
+    "contracts/index.ts": {
+      "from": "packages/contracts/src/index.ts",
+      "sha256": "6f54c19db7da5e9369ab7593fe6f80f2c064f0cc899895429b4c9416c6f8025a"
+    },
+    "contracts/snapshot.ts": {
+      "from": "packages/contracts/src/snapshot.ts",
+      "sha256": "49eaf82e3ae6651ec395e802048771d02bb30fd1b38e841a2526bb42da59656d"
+    },
+    "contracts/verdict.ts": {
+      "from": "packages/contracts/src/verdict.ts",
+      "sha256": "c6a339cce74f9067d0bcfd7fdcdb01e059ec5c6439e9d54491fc102467070a76"
+    },
+    "contracts/policy.ts": {
+      "from": "packages/contracts/src/policy.ts",
+      "sha256": "dae3100250f1bfabe0b9a402642ec0ba0749a16368da6e3278541eed4640003d"
+    },
+    "contracts/rpc.ts": {
+      "from": "packages/contracts/src/rpc.ts",
+      "sha256": "536c513cdcffe5d404fa1e5f083e5a8c63a049a0623cb9d3a8de1b7480592113"
+    },
+    "contracts/gate.ts": {
+      "from": "packages/contracts/src/gate.ts",
+      "sha256": "a6649b9cbe501d46064fdb408d2a5e7345380596ab3fcb68338d10abae1fd8a5"
+    },
+    "contracts/bridge.ts": {
+      "from": "packages/contracts/src/bridge.ts",
+      "sha256": "4ad3db0a20c9502d9e3666c2d6bf1112294996e552235f07b14b2ffec0ccd380"
+    },
+    "corpora/injections/positives.json": {
+      "from": "corpora/injections/positives.json",
+      "sha256": "f4a589539fa4262106f9339a38706c23275f1d51c5e9da3f7ad1e67ae9723b57"
+    },
+    "corpora/injections/negatives.json": {
+      "from": "corpora/injections/negatives.json",
+      "sha256": "e46eb3cded57cb4445e21b29e0a8a574859a1df95f4be17d9d84325e0f34e928"
+    },
+    "corpora/injections/suspicions.json": {
+      "from": "corpora/injections/suspicions.json",
+      "sha256": "7ed2a14ec4cf2542d836f8c3737987cbf3ab8e551582e8f8f31919fc26f00f0f"
+    },
+    "corpora/collect/carriers.json": {
+      "from": "corpora/collect/carriers.json",
+      "sha256": "63c46fd6b3d44b11dcebe6afb39575ee1769effda6afe01b839df3eaf83bba89"
     }
   }
 }
