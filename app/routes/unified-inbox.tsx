@@ -55,6 +55,7 @@ import {
 } from "~/components/inbox/model";
 import { useDrafts } from "~/components/inbox/use-drafts";
 import ReplyFilter from "~/components/inbox/ReplyFilter";
+import FabricSessionButton from "~/components/inbox/FabricSessionButton";
 import { forwardBody } from "../../shared/mail/forward";
 import { isAgentState, type AgentStatusSettings } from "../../shared/mail/agent-state";
 import ConversationList from "~/components/inbox/ConversationList";
@@ -1934,6 +1935,8 @@ export default function UnifiedInbox() {
                           <ArrowBendUpRightIcon size={17} /> {t("Forward")}
                         </button>
                         </>)}
+                        <FabricSessionButton letter={{ subject: detail.data?.subject ?? selected.subject, sender: selected.sender, date: selected.date,
+                          accountId: selected.accountId, messageId: selected.providerMessageId }} />
                         {owner && (
                           <Link to={rulesPath(owner)} state={{ from: "mail" }} className="fi-rule-link">
                             <SparkleIcon size={17} /> {owner.provider === "cloudflare" ? t("Rules for this address") : t("Rules for this account")}

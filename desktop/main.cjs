@@ -26,6 +26,7 @@ const { t } = i18n;
 const updateVerify = require('./update-verify.cjs');
 const platformInstaller = require('./platform-installer.cjs');
 const consoleCore = require('./console.cjs');
+const sessionLinks = require('./session-links.cjs');
 const profileWatch = require('./profile-watch.cjs');
 const { createLog } = require('./log.cjs');
 const { createDigest } = require('./ops-digest.cjs');
@@ -1310,6 +1311,8 @@ function hideConsole() {
   if (consoleWindow && !consoleWindow.isDestroyed()) consoleWindow.close();
   if (mailWindow && !mailWindow.isDestroyed() && mailWindow.isVisible()) { const page = mailPage(); if (page) page.focus(); }
 }
+/** B-305: whether an app is registered for `fabric://` links (Fabric installed); asked by the console and the mail page. */
+function fabricInstalled() { try { return !!app.getApplicationNameForProtocol('fabric://'); } catch { return false; } }
 async function ensureConsole() {
   if (!config || !consoleAvailable()) return null;
   if (agentConsole && consoleFor === config.origin) return agentConsole;
@@ -1322,7 +1325,7 @@ async function ensureConsole() {
     origin: config.origin, mcpUrl: new URL('/mcp', config.origin).href, cwd: app.getPath('home'), loginPath: await loginPath(),
     log: logEvent, skipPermissions: () => consoleSkip,
     onData: (data) => consoleSend('fabric:console-data', data),
-    onState: (state) => { consoleSend('fabric:console-phase', { ...state, server: consoleServerLabel(), runtimes: consoleRuntimes(loginPathValue) }); installMenu(); },
+    onState: (state) => { consoleSend('fabric:console-phase', { ...state, server: consoleServerLabel(), runtimes: consoleRuntimes(loginPathValue), fabric: fabricInstalled() }); installMenu(); },
   });
   return agentConsole;
 }
@@ -1446,11 +1449,40 @@ function installIPC() {
   ipcMain.handle('fabric:console-open', (event) => { if (!policy.isMailSender(event, mailTarget(), config)) throw new Error('Untrusted request'); openConsole(); return true; });
   // The mail page makes room for a docked console (it shifts by --fi-console-width); an older page does not, and gets a window.
   ipcMain.handle('fabric:console-dock-ready', (event) => { if (!policy.isMailSender(event, mailTarget(), config)) throw new Error('Untrusted request'); if (consoleAvailable()) dockReadyPages.add(config.origin); else dockReadyPages.delete(config.origin); if (consoleDocked) layoutDock(); return dockReadyNow(); });
+  // B-305 (SCN-106): Fabric's session links (fabric-session-links/1). Inbox builds the link from ids only and hands it to
+  // the system; Fabric opens the view and asks the person before it starts or moves anything. The console's session id
+  // comes from the console itself, never from a page.
+  const openFabricLink = async (input) => {
+    const built = sessionLinks.sessionLink(input);
+    if (!built.ok) { logEvent({ event: 'session_link', action: String(input && input.action), outcome: 'refused', error: built.error }); return built; }
+    const out = await sessionLinks.openSessionLink(built.url, { appForProtocol: (scheme) => app.getApplicationNameForProtocol(scheme), openExternal: (url) => shell.openExternal(url) });
+    logEvent({ event: 'session_link', action: input.action, outcome: out.ok ? 'opened' : out.error });
+    return out;
+  };
+  ipcMain.handle('fabric:session-projects', async (event) => {
+    if (!policy.isMailSender(event, mailTarget(), config)) throw new Error('Untrusted request');
+    return { projects: await sessionLinks.readProjects(fs, app.getPath('userData')), fabric: fabricInstalled() };
+  });
+  ipcMain.handle('fabric:session-new', async (event, input) => {
+    if (!policy.isMailSender(event, mailTarget(), config)) throw new Error('Untrusted request');
+    const project = String(input?.project ?? '').trim();
+    const out = await openFabricLink({ action: 'new', project, runner: input?.runner ? String(input.runner) : undefined });
+    if (out.ok) await sessionLinks.rememberProject(fs, app.getPath('userData'), project).catch(() => {});
+    return out;
+  });
+  ipcMain.handle('fabric:console-session-link', async (event, action) => {
+    fromConsole(event);
+    if (action !== 'open' && action !== 'continue') return { ok: false, error: 'action' };
+    const id = agentConsole ? await agentConsole.linkedSession() : null;
+    if (!id) return { ok: false, error: 'session' };
+    return openFabricLink({ action, session: id });
+  });
   ipcMain.handle('fabric:console-state', async (event) => {
     fromConsole(event);
     const c = await ensureConsole();
     const runtimes = consoleRuntimes(await loginPath());
-    return { ...(c ? c.state() : { phase: 'idle' }), server: consoleServerLabel(), runtimes, lastRuntime, output: c ? c.output() : '' };
+    return { ...(c ? c.state() : { phase: 'idle' }), server: consoleServerLabel(), runtimes, lastRuntime, output: c ? c.output() : '',
+      linked: c ? await c.linkedSession() : null, fabric: fabricInstalled() };
   });
   ipcMain.handle('fabric:console-start', async (event, input) => {
     fromConsole(event);

@@ -15,3 +15,5 @@ button.small { padding: 3px 10px; font-size: 13px; }
 button.close { background: transparent; border: 0; border-radius: 6px; width: 28px; height: 28px; font-size: 20px; line-height: 1; color: var(--fi-muted, #666); cursor: pointer; }
 button.close:hover { background: var(--fi-hover, rgba(0,0,0,.06)); color: inherit; }
 button.close:focus-visible { outline: 2px solid var(--fi-accent, #2563eb); outline-offset: 1px; }
+.fabric-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 12px; border-bottom: 1px solid var(--fi-border, #ddd); }
+.fabric-row[hidden] { display: none; }

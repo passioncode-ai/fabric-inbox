@@ -35,7 +35,26 @@ function ensureTerminal() {
 
 function say(text) { $('#status').textContent = text; }
 
+/**
+ * B-305 (SCN-106): the console's Claude Code session, running, ended or the last one, opened in Fabric or moved there.
+ * Shown only with a session id (Codex has none) and with Fabric installed; Fabric asks before it stops or starts anything.
+ */
+function showFabric(state) {
+  const linked = state.sessionId || state.linked || null;
+  $('#fabric').hidden = !linked;
+  $('#fabric-open').title = t('Fabric shows this session; it keeps running here.');
+  $('#fabric-continue').title = state.phase === 'running' ? t('Fabric asks first, then stops the session here and continues it in its console.') : t('Fabric asks first, then continues the session in its console.');
+}
+async function fabricLink(action) {
+  const out = await window.fabricConsole.sessionLink(action);
+  $('#fabric-note').textContent = out && out.ok ? t('Fabric is open: confirm there.')
+    : out && out.error === 'not_installed' ? t('Fabric is not installed. Get it at passioncode.ai/fabric')
+    : out && out.error === 'session' ? t('This session has no id Fabric can open.')
+    : t('Fabric could not be opened.');
+}
+
 function show(state) {
+  showFabric(state);
   running = state.phase === 'running' || state.phase === 'starting';
   $('#stop').hidden = state.phase !== 'running';
   // B-290 (U1): the close button hides the panel (or closes the window); a running session keeps running.
@@ -81,6 +100,8 @@ $('#stop').addEventListener('click', () => {
 });
 
 $('#close').addEventListener('click', () => void window.fabricConsole.hide());
+$('#fabric-open').addEventListener('click', () => void fabricLink('open'));
+$('#fabric-continue').addEventListener('click', () => void fabricLink('continue'));
 // Escape closes the console only when no session runs: while one runs, Escape is the agent's.
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape' || running || event.defaultPrevented || event.isComposing) return;

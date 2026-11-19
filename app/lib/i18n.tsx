@@ -58,6 +58,9 @@ declare global {
 			openConsole?(): Promise<unknown>;
 			consoleDockReady?(): Promise<unknown>;
 			onConsoleDock?(callback: (width: number) => void): () => void;
+			/** B-305 (SCN-106): Fabric's start of a coding session (fabric-session-links/1), by ids only. */
+			sessionProjects?(): Promise<{ projects: string[]; fabric: boolean }>;
+			sessionNew?(input: { project: string; runner: "claude" | "codex" }): Promise<{ ok: boolean; error?: string }>;
 		};
 	}
 }

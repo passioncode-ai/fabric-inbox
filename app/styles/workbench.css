@@ -982,6 +982,53 @@ body {
   border-top: 1px solid var(--pc-border);
   font-size: 12px;
 }
+/* B-305 (SCN-106): a new coding session in Fabric from the email. */
+.fi-session-new {
+  position: relative;
+}
+.fi-session-new-panel {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 320px;
+  padding: 14px;
+  border: 1px solid var(--pc-border);
+  border-radius: 10px;
+  background: var(--pc-surface, var(--pc-bg));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  font-size: 12px;
+}
+.fi-session-new-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fi-session-new-panel input,
+.fi-session-new-panel select {
+  font: inherit;
+  padding: 6px 8px;
+  border: 1px solid var(--pc-border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+}
+.fi-session-new-panel p {
+  margin: 0;
+}
+.fi-session-new-actions {
+  display: flex;
+  gap: 8px;
+}
+.fi-session-new-note {
+  margin: 4px 0 0;
+  max-width: 320px;
+  color: var(--pc-text-muted);
+  font-size: 11px;
+}
 .fi-rule-link {
   display: flex;
   align-items: center;
