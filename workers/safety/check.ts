@@ -43,7 +43,11 @@ export interface SafetyFindings {
 export type SafetyScan = (text: string) => Promise<{ flagged: boolean; error?: string }>;
 
 /** What the check reads: the message as HTML (a text-only message escaped into HTML) and its subject. */
-export interface SafetyInput { subject: string; html: string; /** B-179: the text of its attached documents. */ files?: string }
+export interface SafetyInput {
+  subject: string; html: string; /** B-179: the text of its attached documents. */ files?: string;
+  /** B-303: signals Okolos's rules decided on in the hidden text of its HTML attachments (files.ts). */
+  fileHiddenSignals?: SignalName[];
+}
 
 const MODEL_CHARS = 16_000;
 
@@ -54,6 +58,7 @@ export async function inspectMessage(input: SafetyInput, scan: SafetyScan): Prom
   const h = hidden ? analyse(hidden) : { signals: [] as SignalName[] };
   const files = input.files?.trim() ?? "";
   const f = files ? analyse(files) : { signals: [] as SignalName[] };
+  const fileSignals = [...new Set([...f.signals, ...(input.fileHiddenSignals ?? [])])];
   let forModel = hidden ? `${shown.slice(0, MODEL_CHARS / 2)}\n\n[Text the reader does not see]\n${hidden.slice(0, MODEL_CHARS / 2)}` : shown.slice(0, MODEL_CHARS);
   // B-179: an attached document's text is read like hidden text: the model sees a part of it beside the body.
   if (files) forModel = `${forModel.slice(0, (MODEL_CHARS * 2) / 3)}\n\n[Text of the attached files]\n${files.slice(0, MODEL_CHARS / 3)}`;
@@ -64,7 +69,7 @@ export async function inspectMessage(input: SafetyInput, scan: SafetyScan): Prom
     hidden: hidden.slice(0, HIDDEN_CHARS),
     model: !!result.flagged && !result.error,
     ...(result.error ? { modelError: result.error.slice(0, 200) } : {}),
-    ...(f.signals.length ? { fileSignals: [...f.signals] } : {}),
+    ...(fileSignals.length ? { fileSignals } : {}),
   };
 }
 
