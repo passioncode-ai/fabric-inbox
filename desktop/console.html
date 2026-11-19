@@ -22,6 +22,12 @@
   <!-- B-290 (U1): the panel or window always closes from its own bar; a running session keeps running. -->
   <button type="button" id="close" class="close" aria-label="Close the console" title="Close the console">&times;</button>
 </header>
+<!-- B-305 (SCN-106): the console's Claude Code session in Fabric (fabric-session-links/1); Fabric asks before it moves anything. -->
+<nav id="fabric" class="fabric-row" aria-label="Fabric" hidden>
+  <button type="button" id="fabric-open" class="secondary small" data-i18n>Open session</button>
+  <button type="button" id="fabric-continue" class="secondary small" data-i18n>Open in Fabric</button>
+  <span id="fabric-note" class="hint" role="status" aria-live="polite"></span>
+</nav>
 <section id="choose" class="choose" hidden>
   <p data-i18n>Your coding agent runs here, connected to this Fabric Inbox: ask it to do anything the app does. It gets its own key for this session, revoked when the session ends.</p>
   <div class="row">

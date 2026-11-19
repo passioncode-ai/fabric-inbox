@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('fabricConsole', Object.freeze({
   start: (input) => ipcRenderer.invoke('fabric:console-start', { runtime: String(input.runtime), level: String(input.level), resume: !!input.resume, cols: Number(input.cols), rows: Number(input.rows) }),
   stop: () => ipcRenderer.invoke('fabric:console-stop'),
   hide: () => ipcRenderer.invoke('fabric:console-hide'),
+  // B-305: opens the console's Claude Code session in Fabric, or moves it there ('open' or 'continue'); the id is the main process's.
+  sessionLink: (action) => ipcRenderer.invoke('fabric:console-session-link', action === 'continue' ? 'continue' : 'open'),
   write: (data) => ipcRenderer.send('fabric:console-write', String(data)),
   resize: (cols, rows) => ipcRenderer.send('fabric:console-resize', Number(cols), Number(rows)),
   onData: listen('fabric:console-data', (v) => String(v)),

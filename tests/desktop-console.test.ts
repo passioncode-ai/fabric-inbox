@@ -94,7 +94,9 @@ test("a session: a key for it, Claude Code with only this server, the key in no 
   for (let i = 0; i < 100 && s.states.at(-1)?.phase !== "ended"; i++) await new Promise((r) => setTimeout(r, 10));
   assert.deepEqual(s.revoked, ["k1"], "the session's key is revoked when it ends");
   assert.ok(!existsSync(path.dirname(configPath)), "its folder is gone");
-  assert.deepEqual(s.states.at(-1), { phase: "ended", reason: "stopped", code: 129, runtime: "claude", keyRevoked: true });
+  const { sessionId, ...ended } = s.states.at(-1);
+  assert.deepEqual(ended, { phase: "ended", reason: "stopped", code: 129, runtime: "claude", keyRevoked: true });
+  assert.match(sessionId, /^[0-9a-f-]{36}$/, "B-305: the ended session keeps its id, for Fabric");
   assert.deepEqual(JSON.parse(readFileSync(path.join(s.dir, "keys.json"), "utf8")), [], "nothing left to revoke later");
 });
 

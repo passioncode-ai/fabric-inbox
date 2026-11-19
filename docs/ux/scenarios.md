@@ -107,6 +107,7 @@
 | SCN-103 | An organization's outreach agent writes from its own mailbox | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-15 | draft | not yet |
 | SCN-104 | Check and send the agent's draft in the thread | Review AI help | P-01 | ST-004, FLW-04, SCR-04 | draft | not yet |
 | SCN-105 | See the mailboxes shared with me and who shared them | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-02 | draft | partial |
+| SCN-106 | Start or move a coding session in Fabric from an email or the console | Resume and manage preferences | P-01 | ST-007, FLW-07, SCR-04 | draft | partial |
 
 ### SCN-105: See the mailboxes shared with me and who shared them
 - **Persona:** P-01
@@ -2214,3 +2215,24 @@ For every scenario: keyboard order follows visible navigation, scope, content, t
 - **Coverage:** `app/components/inbox/AgentDraftCard.tsx`, `app/components/inbox/draft-card.ts`, `app/components/inbox/ConversationList.tsx` (`cardPlacement`, `Clamp`), `workers/agents/retire.ts`, `workers/durableObject/index.ts` (`retireAgentDrafts`, `deleteUntouchedDraft`, `createPersonDraft`), `workers/routes/agents.ts` (`discard-draft`, `redraft`, `tuning`). Tests: `tests/agent-draft-card.test.ts`, `tests/agent-draft-card-audit.test.ts`, `tests/draft-retire.test.ts`, `tests/draft-retire-workerd.test.ts`.
 - **Product:** unobserved
 - **Today:** Built for Cloudflare addresses (S06, S07). On Gmail, IMAP and Outlook accounts the agent's draft stays as before (an ordinary draft cell; not retired or hidden when a reply is sent); see the "Built as" notes of S06 and S07. Not yet walked in WebKit.
+
+### SCN-106: Start or move a coding session in Fabric from an email or the console
+- **Persona:** P-01
+- **Feature:** Resume and manage preferences
+- **Traces:** ST-007, FLW-07, SCR-04; JTBD-03; B-305; the owner's order of 2026-11-19 (board thread `3ca40854`, message `57445717`: a new session starts from any app, and an app opens a session it is linked to «сразу оттуда»), Fabric's `fabric-session-links/1` (message `b37c7dce`) over the `fabric://` links of fabric-agent-contract DEC-0040
+- **Entry point:** SCR-04, the bar under an open email (New session); the agent console's Fabric row (Open session, Open in Fabric)
+- **Preconditions:** The desktop app; Fabric installed for the links to open. For the console's row: a Claude Code session started in the console (running, ended, or the last one), since only Claude Code has an id Fabric can take.
+- **Steps:**
+  1. Under an open email, New session -> a panel asks for the Fabric project (as Fabric names it; the ones used before are offered, newest first) and the agent (Claude Code or Codex), and says that Fabric asks before it runs anything and that the link carries no words.
+  2. Open in Fabric -> the email's reference (subject, sender, date, its account and message id for the fabric-inbox tool `read_message`) is copied, and Fabric opens its start in that project (`fabric://session/new?project=…&runner=claude-code|codex&from=fabric-inbox`); the bar says Fabric is open and the reference is copied. The person confirms the start in Fabric and pastes the reference into the session.
+  3. In the console, Open session -> Fabric shows the console's session (`fabric://session/open?session=<id>&from=fabric-inbox`); it keeps running in the console.
+  4. Or Open in Fabric -> Fabric asks, then stops the session in the console (its key is revoked as on any end) and continues it in its own console (`fabric://session/continue?session=<id>&from=fabric-inbox`); an ended session is continued at once after the same confirmation.
+- **Expected result:** A coding session about an email, or the console's own session, reaches Fabric in one press, through Fabric's one launch path; Inbox starts nothing itself and sends no words in a link.
+- **Alt paths:** Fabric not installed: the panel and the console say "Fabric is not installed. Get it at passioncode.ai/fabric" and nothing opens. A project written with a space, a slash or a percent sign: refused before Fabric opens, with how to write it. A name Fabric does not know: Fabric opens its home and says so. A Codex session: no Fabric row (Codex gives no session id). Continue last session in the console resumes the console's own last Claude Code session by its id when its transcript is still there, else the most recent conversation in the folder, as before. A server older than this change shows no New session under the email.
+- **UI elements:** SCR-04 New session and its panel (Fabric project, Agent, Open in Fabric, Cancel); the console's Fabric row (Open session, Open in Fabric).
+- **States covered:** empty, success, error
+- **Errors & recovery:** The system refuses to open the link: "Fabric could not be opened." The clipboard cannot be written: Fabric still opens, and the bar says only that Fabric is open. The session id is read by the main process from the console, never taken from a page.
+- **Status:** draft
+- **Coverage:** `desktop/session-links.cjs`, `desktop/console.cjs` (`--session-id`, `linkedSession`, `claudeTranscript`), `desktop/console-view.js`, `desktop/console.html`, `desktop/main.cjs` (`fabric:session-*`, `fabric:console-session-link`), `desktop/mail-preload.cjs`, `desktop/console-preload.cjs`, `app/components/inbox/FabricSessionButton.tsx`, `app/routes/unified-inbox.tsx`. Tests: `tests/desktop-session-links.test.ts`, `tests/desktop-console.test.ts`.
+- **Product:** unobserved
+- **Today:** Built 2026-11-19 (B-305). `session/new` opens today's Fabric; `session/open`, `session/continue` and `from` in Fabric's launch journal arrive with Fabric's release planned for 2026-11-20, until then Fabric opens its home for them. Not yet walked in a built app.

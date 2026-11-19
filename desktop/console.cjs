@@ -37,7 +37,12 @@ const RUNTIMES = [
     id: 'claude', name: 'Claude Code', bin: 'claude',
     // --mcp-config=<file> joined, so the next argument is never taken as a second file; strict:
     // only this server, whatever the person's own config holds.
-    args: ({ configPath, brief, resume, skip }) => [...(resume ? ['--continue'] : []), `--mcp-config=${configPath}`, '--strict-mcp-config', '--append-system-prompt', brief,
+    // B-305: a new session gets its own id (`--session-id`), so Fabric can open or continue it (fabric-session-links/1);
+    // Continue last session resumes the console's own last session by that id when its transcript is there, else
+    // the most recent one in the folder, as before.
+    args: ({ configPath, brief, resume, skip, sessionId, resumeId }) => [
+      ...(resumeId ? ['--resume', resumeId] : resume ? ['--continue'] : []), `--mcp-config=${configPath}`, '--strict-mcp-config',
+      ...(sessionId && !resume ? ['--session-id', sessionId] : []), '--append-system-prompt', brief,
       ...(skip ? ['--dangerously-skip-permissions'] : [])],
   },
   {
@@ -96,6 +101,16 @@ function mcpConfig(mcpUrl, names) {
     headers: { 'CF-Access-Client-Id': `\${${names.id}}`, 'CF-Access-Client-Secret': `\${${names.secret}}` } } } };
 }
 
+/**
+ * B-305: the transcript Claude Code keeps for a session, `<CLAUDE_CONFIG_DIR or ~/.claude>/projects/<folder>/<id>.jsonl`,
+ * where the folder is the session's working folder with every character but a letter or a digit written as `-`.
+ */
+function claudeTranscript(env, cwd, id) {
+  const home = env.CLAUDE_CONFIG_DIR || path.join(env.HOME || env.USERPROFILE || '', '.claude');
+  return path.join(home, 'projects', String(cwd).replace(/[^A-Za-z0-9]/g, '-'), `${id}.jsonl`);
+}
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** A ring of the last RING_BYTES of output, replayed to a view that opens later. */
 function ring(limit = RING_BYTES) {
   let chunks = []; let size = 0;
@@ -122,6 +137,13 @@ function createConsole(deps) {
   const out = ring();
   const set = (next) => { state = next; onState(state); };
   const leftoversFile = path.join(dir, 'keys.json');
+  // B-305: the id of the console's last Claude Code session ({ runtime, id }), so it can be opened or continued in Fabric
+  // after it ended, and resumed by its own id.
+  const lastFile = path.join(dir, 'last-session.json');
+  async function lastSession() {
+    try { const v = JSON.parse(await fs.readFile(lastFile, 'utf8')); return v && v.runtime === 'claude' && UUID.test(v.id) ? v.id : null; } catch { return null; }
+  }
+  async function rememberSession(id) { await fs.mkdir(dir, { recursive: true, mode: 0o700 }); await fs.writeFile(lastFile, JSON.stringify({ runtime: 'claude', id }), { mode: 0o600 }); }
 
   // keys.json: the key ids a session made and has not revoked yet, each with the server it belongs to
   // (a bare id is from before 0.16). A key is revoked only through its own server's session.
@@ -142,7 +164,7 @@ function createConsole(deps) {
     if (revoked) await remember(stored((await recorded()).filter((e) => e.id !== s.keyId))).catch(() => {});
     await fs.rm(s.folder, { recursive: true, force: true }).catch(() => {});
     log({ event: 'console', outcome: 'ended', runtime: s.runtime, reason, code: code ?? null, revoked });
-    set({ phase: 'ended', reason, code: code ?? null, runtime: s.runtime, keyRevoked: revoked });
+    set({ phase: 'ended', reason, code: code ?? null, runtime: s.runtime, keyRevoked: revoked, ...(s.sessionId ? { sessionId: s.sessionId } : {}) });
     s.resolveEnded();
   }
   const newSession = (fields) => { const s = { ...fields }; s.ended = new Promise((resolve) => { s.resolveEnded = resolve; }); return s; };
@@ -191,14 +213,23 @@ function createConsole(deps) {
     const folder = path.join(dir, `session-${tag.toLowerCase()}`);
     // From here on the key exists: whatever fails ends this session, which revokes it (bug hunt 2026-10-12:
     // a failed write left the view stuck on "starting" and the key live).
-    const pending = newSession({ keyId: key.id, folder, runtime: spec.id, level });
+    // B-305: Claude Code's session id: a new one, or the last one when it is resumed and its transcript is there.
+    let sessionId = null; let resumeId = null;
+    if (spec.id === 'claude') {
+      if (!resume) sessionId = crypto.randomUUID();
+      else {
+        const last = await lastSession();
+        if (last && typeof fs.access === 'function' && await fs.access(claudeTranscript(env, cwd, last)).then(() => true, () => false)) { resumeId = last; sessionId = last; }
+      }
+    }
+    const pending = newSession({ keyId: key.id, folder, runtime: spec.id, level, sessionId });
     session = pending;
     let child;
     try {
       await fs.mkdir(folder, { recursive: true, mode: 0o700 });
       const configPath = path.join(folder, 'mcp.json');
       await fs.writeFile(configPath, JSON.stringify(mcpConfig(mcpUrl, names), null, 2), { mode: 0o600 });
-      child = pty.spawn(runtime.file, spec.args({ configPath, brief: briefFor(origin), mcpUrl, env: names, resume, skip }), ptyOptions(platform, {
+      child = pty.spawn(runtime.file, spec.args({ configPath, brief: briefFor(origin), mcpUrl, env: names, resume, skip, sessionId, resumeId }), ptyOptions(platform, {
         name: 'xterm-256color', cols: Math.max(2, Math.min(1000, cols | 0)), rows: Math.max(1, Math.min(500, rows | 0)), cwd,
         env: sessionEnv(env, { loginPath, names, key, origin }),
       }));
@@ -211,8 +242,9 @@ function createConsole(deps) {
     pending.lastActive = now();
     child.onData((data) => { out.push(data); onData(data); if (session === pending) active(pending); });
     child.onExit(({ exitCode }) => { void end(pending, pending.stopping ? 'stopped' : 'exited', exitCode); });
-    log({ event: 'console', outcome: 'started', runtime: spec.id, level, resume, skipPermissions: skip });
-    set({ phase: 'running', runtime: spec.id, level });
+    if (sessionId) await rememberSession(sessionId).catch(() => {});
+    log({ event: 'console', outcome: 'started', runtime: spec.id, level, resume, skipPermissions: skip, sessionKnown: !!sessionId });
+    set({ phase: 'running', runtime: spec.id, level, ...(sessionId ? { sessionId } : {}) });
     watchQuiet(pending);
     return { ok: true };
   }
@@ -220,6 +252,8 @@ function createConsole(deps) {
   return {
     state: () => state,
     output: () => out.text(),
+    /** B-305: the Claude Code session Fabric can open or continue: the running or ended one, else the last one kept. */
+    async linkedSession() { return state.sessionId || (state.phase === 'idle' ? await lastSession() : null); },
 
     /** Opens the agent: a key for this session, its config, then the PTY. */
     async start({ runtime, level = 'admin', resume = false, cols = 100, rows = 30 }) {
@@ -347,5 +381,5 @@ async function writeSkip(fsp, userData, skip) {
   return skip;
 }
 
-module.exports = { createConsole, findRuntimes, searchPath, sessionEnv, mcpConfig, briefFor, ring, checkPty, ptyCheckCommand, ptyHoldCommand, ptyOptions, PTY_CHECK_TOKEN, RUNTIMES, LEVELS,
+module.exports = { createConsole, claudeTranscript, findRuntimes, searchPath, sessionEnv, mcpConfig, briefFor, ring, checkPty, ptyCheckCommand, ptyHoldCommand, ptyOptions, PTY_CHECK_TOKEN, RUNTIMES, LEVELS,
   SKIP_FILE, readSkip, writeSkip };

@@ -5,7 +5,8 @@
 // menus and windows follow Settings → App → Language, the agent console, and (B-244 D-2) the other
 // servers the app holds: their list, their inboxes, their settings lists (S11) and showing one of them. main.cjs answers the
 // shown page's main frame (policy.isMailSender), the servers' calls any held server's page at its own
-// main frame (policy.heldPageOrigin), and sends the wake signal only to the mail window's pages.
+// main frame (policy.heldPageOrigin), and sends the wake signal only to the mail window's pages. B-305: opening Fabric's
+// start of a coding session, by ids only.
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('fabricDesktop', Object.freeze({
   pendingSetup: () => ipcRenderer.invoke('fabric:pending-setup'),
@@ -47,6 +48,11 @@ contextBridge.exposeInMainWorld('fabricDesktop', Object.freeze({
     ipcRenderer.on('fabric:server-tab', listener);
     return () => ipcRenderer.removeListener('fabric:server-tab', listener);
   },
+  // B-305 (SCN-106): a new coding session in Fabric (fabric-session-links/1): the Fabric projects sessions were sent to
+  // ({ projects, fabric }: whether Fabric is installed), and opening Fabric's start for one. Ids only cross; Fabric asks
+  // the person before it starts anything.
+  sessionProjects: () => ipcRenderer.invoke('fabric:session-projects'),
+  sessionNew: (input) => ipcRenderer.invoke('fabric:session-new', { project: String(input?.project ?? ''), runner: input?.runner === 'codex' ? 'codex' : 'claude' }),
   // Receive-only: the page passes a callback and gets back its unsubscribe; no data crosses.
   onResume: (callback) => {
     if (typeof callback !== 'function') return () => {};

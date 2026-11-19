@@ -612,4 +612,15 @@ export const INBOX: Readonly<Record<string, string>> = {
 	"Today's domain lookups on this server are spent. Try again tomorrow.": "Проверки доменов на этом сервере на сегодня исчерпаны. Попробуйте завтра.",
 	"Its site presents itself as {brand}, but this is not {brand}'s domain.": "Его сайт выдаёт себя за {brand}, но это не домен {brand}.",
 	"Only received mail has a sender to look up.": "Проверить отправителя можно только у полученного письма.",
+	// B-305 (SCN-106): a new coding session in Fabric from an email.
+	"Email in Fabric Inbox: \"{subject}\" from {sender}, {date}. Read it with the fabric-inbox tool read_message: accountId {accountId}, messageId {messageId}.": "Письмо в Fabric Inbox: «{subject}» от {sender}, {date}. Прочитайте его инструментом fabric-inbox read_message: accountId {accountId}, messageId {messageId}.",
+	"(no subject)": "(без темы)",
+	"Fabric is open: confirm the start there. The email's reference is copied: paste it into the session.": "Fabric открыт: подтвердите запуск там. Ссылка на письмо скопирована: вставьте её в сессию.",
+	"Fabric is open: confirm the start there.": "Fabric открыт: подтвердите запуск там.",
+	"Write the project as Fabric names it: letters, digits, dots and dashes, no spaces or slashes.": "Напишите проект так, как его называет Fabric: буквы, цифры, точки и дефисы, без пробелов и косых черт.",
+	"Start a coding session in Fabric about this email": "Начать сессию агента в Fabric по этому письму",
+	"New session in Fabric": "Новая сессия в Fabric",
+	"Fabric project": "Проект в Fabric",
+	"as Fabric names it": "как в Fabric",
+	"Fabric shows the start and asks before it runs. The link carries no words, so this email's reference is copied for you to paste into the session.": "Fabric покажет запуск и спросит перед стартом. Ссылка не несёт текста, поэтому ссылка на это письмо копируется: вставьте её в сессию.",
 };
