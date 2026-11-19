@@ -228,6 +228,8 @@ export class AgentRegistryDO extends DurableObject<Env> {
       state.calls += pass.calls;
       state.next = state.calls >= budget ? tomorrow : pass.more ? now + 60_000 : pass.failed ? now + TOPICS_RETRY_MS : now + TOPICS_IDLE_MS;
       state.failed = pass.failed > 0;
+      // B-301: a skipped mailbox still counts in the day's server errors, without stopping the others.
+      if (pass.boxesFailed) countLog(this.env, "alarm", JSON.stringify({ event: "support_topics_box_failed", boxes: pass.boxesFailed }));
     } else state.next = tomorrow;
     await this.ctx.storage.put("topics_state", state);
     return state.next;

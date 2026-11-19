@@ -67,20 +67,31 @@ test("a labelling pass spends at most its calls, mailbox by mailbox, and says wh
   const seen: string[] = [];
   const pass = await labelMailboxes(["a@x.example", "b@x.example"], (e) => (e.startsWith("a") ? a : b), 6,
     async (m) => { seen.push(m.text); return { topic: "refund", negative: true, money: "refund" }; }, "m");
-  assert.deepEqual(pass, { calls: 6, labelled: 6, failed: 0, unreadable: 0, more: true });
+  assert.deepEqual(pass, { calls: 6, labelled: 6, failed: 0, unreadable: 0, boxesFailed: 0, more: true });
   assert.equal(a.saved.length, 3);
   assert.equal(b.saved.length, 3);
   assert.equal(seen[0], "I want my money back", "the model reads text, not HTML");
   const rest = await labelMailboxes(["a@x.example", "b@x.example"], (e) => (e.startsWith("a") ? a : b), 6, async () => ({ topic: "refund", negative: false, money: null }), "m");
-  assert.deepEqual(rest, { calls: 2, labelled: 2, failed: 0, unreadable: 0, more: false });
+  assert.deepEqual(rest, { calls: 2, labelled: 2, failed: 0, unreadable: 0, boxesFailed: 0, more: false });
 });
 
 test("a failed label ends that mailbox's pass and keeps what was labelled (B-238)", async () => {
   const a = fakeBox(4);
   let n = 0;
   const pass = await labelMailboxes(["a@x.example"], () => a, 10, async () => { if (++n === 2) throw new Error("model down"); return { topic: "bug", negative: false, money: null }; }, "m");
-  assert.deepEqual(pass, { calls: 2, labelled: 1, failed: 1, unreadable: 0, more: false });
+  assert.deepEqual(pass, { calls: 2, labelled: 1, failed: 1, unreadable: 0, boxesFailed: 0, more: false });
   assert.equal(a.saved.length, 1);
+});
+
+test("a mailbox that cannot be read or saved is skipped and counted, and the others are labelled with every call kept (B-301)", async () => {
+  const a = fakeBox(2), c = fakeBox(2);
+  const unreadable = { saved: [] as unknown[], topicCandidates: async () => { throw new Error("Durable Object reset"); }, saveTopics: async () => 0 };
+  const unsavable = { ...fakeBox(2), saveTopics: async () => { throw new Error("storage write failed"); } };
+  const boxes: Record<string, typeof a | typeof unreadable | typeof unsavable> = { "a@x.example": a, "b@x.example": unreadable, "u@x.example": unsavable, "c@x.example": c };
+  const pass = await labelMailboxes(Object.keys(boxes), (e) => boxes[e] as never, 10, async () => ({ topic: "bug", negative: false, money: null }), "m");
+  assert.deepEqual(pass, { calls: 6, labelled: 4, failed: 0, unreadable: 0, boxesFailed: 2, more: false }, "the calls spent on the box that could not save still count against the day's budget");
+  assert.equal(a.saved.length, 2);
+  assert.equal(c.saved.length, 2, "the mailbox after the failed ones is labelled in the same pass");
 });
 
 test("a real mailbox lists unlabelled conversations newest first, keeps labels once and folds them (B-238)", async () => {
@@ -138,5 +149,5 @@ test("an answer with no label skips only that conversation; the pass goes on (B-
   const a = fakeBox(4);
   let n = 0;
   const pass = await labelMailboxes(["a@x.example"], () => a, 10, async () => { if (++n === 2) throw new LabelUnreadable(); return { topic: "bug", negative: false, money: null }; }, "m");
-  assert.deepEqual(pass, { calls: 4, labelled: 3, failed: 0, unreadable: 1, more: false });
+  assert.deepEqual(pass, { calls: 4, labelled: 3, failed: 0, unreadable: 1, boxesFailed: 0, more: false });
 });

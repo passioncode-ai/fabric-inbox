@@ -160,25 +160,35 @@ export type TopicLabeler = (message: { subject: string; text: string }) => Promi
  * a later pass; `more` says the pass stopped at `max` with conversations left.
  */
 export async function labelSupportTopics(env: Env, max: number, label: TopicLabeler, model: string): Promise<LabelPass> {
-  if (max <= 0) return { calls: 0, labelled: 0, failed: 0, unreadable: 0, more: false };
+  if (max <= 0) return { calls: 0, labelled: 0, failed: 0, unreadable: 0, boxesFailed: 0, more: false };
   const addresses = (await inboxSources(env).cloudflareAccounts()).map((a) => a.email.toLowerCase());
   return labelMailboxes(addresses, (email) => env.MAILBOX.get(env.MAILBOX.idFromName(email)), max, label, model);
 }
 
-/** `failed`: calls that threw (the model is likely down; the pass ends); `unreadable`: answers with no label (skipped). */
-export interface LabelPass { calls: number; labelled: number; failed: number; unreadable: number; more: boolean }
+/**
+ * `failed`: calls that threw (the model is likely down; the pass ends); `unreadable`: answers with no label (skipped);
+ * `boxesFailed`: mailboxes whose conversations could not be read or saved (skipped; the others go on, B-301).
+ */
+export interface LabelPass { calls: number; labelled: number; failed: number; unreadable: number; boxesFailed: number; more: boolean }
 interface TopicBox {
   topicCandidates(limit: number): Promise<{ key: string; firstIn: string; subject: string; body: string }[]>;
   saveTopics(labels: { key: string; topic: string; negative: boolean; money: string | null; model: string }[]): Promise<number>;
 }
 
 export async function labelMailboxes(addresses: string[], open: (email: string) => TopicBox, max: number, label: TopicLabeler, model: string): Promise<LabelPass> {
-  const out: LabelPass = { calls: 0, labelled: 0, failed: 0, unreadable: 0, more: false };
+  const out: LabelPass = { calls: 0, labelled: 0, failed: 0, unreadable: 0, boxesFailed: 0, more: false };
   for (const email of addresses) {
     if (out.calls >= max) { out.more = true; break; }
     const box = open(email);
     const want = max - out.calls;
-    const candidates = await box.topicCandidates(want);
+    // B-301: one mailbox that cannot be read is skipped, not the end of the pass: a throw here lost the calls already
+    // spent on the mailboxes before it from the day's budget, and held every mailbox after it until the next pass.
+    let candidates: Awaited<ReturnType<TopicBox["topicCandidates"]>>;
+    try { candidates = await box.topicCandidates(want); } catch (error) {
+      out.boxesFailed++;
+      console.warn(JSON.stringify({ event: "support_topics_box_failed", step: "read", error: String((error as Error)?.message ?? error).slice(0, 120) }));
+      continue;
+    }
     const labels: { key: string; topic: string; negative: boolean; money: string | null; model: string }[] = [];
     let failed = false;
     for (const c of candidates) {
@@ -195,7 +205,13 @@ export async function labelMailboxes(addresses: string[], open: (email: string) 
         break;
       }
     }
-    if (labels.length) out.labelled += await box.saveTopics(labels);
+    if (labels.length) {
+      try { out.labelled += await box.saveTopics(labels); } catch (error) {
+        out.boxesFailed++;
+        console.warn(JSON.stringify({ event: "support_topics_box_failed", step: "save", error: String((error as Error)?.message ?? error).slice(0, 120) }));
+        continue;
+      }
+    }
     if (candidates.length >= want && !failed) out.more = true;
   }
   console.log(JSON.stringify({ event: "support_topics_labelled", ...out }));

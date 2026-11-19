@@ -502,3 +502,12 @@ test("B-203: with the details off nothing of the server's errors is read or sent
   assert.equal(srv.events().filter((e) => e.eventName === "server_error").length, 0);
   assert.equal(a.countsWanted(), false, "the server's counts, errors included, are not read at all");
 });
+
+test("a helper or a page that goes while the app quits is not counted as a crash (B-301)", () => {
+  const main = readFileSync("desktop/main.cjs", "utf8");
+  const watch = main.slice(main.indexOf("function watchErrors"), main.indexOf("async function startAnalytics"));
+  assert.match(watch, /const gone = \(details\) => analytics && !quitting && details\.reason !== 'clean-exit';/);
+  assert.match(watch, /app\.on\('render-process-gone', \(_event, _contents, details\) => \{ if \(gone\(details\)\)/);
+  assert.match(watch, /app\.on\('child-process-gone', \(_event, details\) => \{ if \(gone\(details\)\)/);
+  assert.match(main, /app\.on\('before-quit'[\s\S]{0,400}quitting = true;/, "before-quit is what sets it");
+});

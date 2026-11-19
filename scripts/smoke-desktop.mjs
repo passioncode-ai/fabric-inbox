@@ -64,11 +64,22 @@ export function verdictOf(lines, { consoleCheck = false, background = false, qui
   return null;
 }
 
-export async function smoke({ exe, timeout, extra, consoleCheck = false, background = false }) {
-  const profile = mkdtempSync(path.join(os.tmpdir(), 'fabric-smoke-'));
+/**
+ * The throwaway profile a smoke launch starts with. The release workflow smokes the very builds it publishes, and
+ * those carry the analytics App Key (release.yml), so a CI launch would count as an install, a start and, when the
+ * helpers die by the stop below, an `app_error` `killed` (B-301: most of November's counts were these). The profile
+ * has this product's usage counts off, as a person's own switch would (desktop/analytics.cjs `start`): nothing is sent.
+ */
+export function prepareProfile(profile, { background = false } = {}) {
   writeFileSync(path.join(profile, 'sandbox-warning'), 'off\n'); // desktop/policy.cjs SANDBOX_WARNING_FILE
+  writeFileSync(path.join(profile, 'analytics-state.json'), JSON.stringify({ declined: true }) + '\n'); // desktop/analytics.cjs stateFile
   // desktop/main.cjs readConfig: a background launch needs a server to stay quiet for.
   if (background) writeFileSync(path.join(profile, 'server.json'), JSON.stringify({ origin: 'https://mail.example.invalid', accessOrigin: '' }));
+}
+
+export async function smoke({ exe, timeout, extra, consoleCheck = false, background = false }) {
+  const profile = mkdtempSync(path.join(os.tmpdir(), 'fabric-smoke-'));
+  prepareProfile(profile, { background });
   const child = spawn(exe, [`--user-data-dir=${profile}`, ...(consoleCheck ? ['--fabric-check-console'] : []), ...(background ? ['--background'] : []), ...extra], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32' });
   const lines = [];
   let buffer = '';

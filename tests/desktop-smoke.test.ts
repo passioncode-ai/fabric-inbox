@@ -48,3 +48,27 @@ test("with --background the smoke passes on a quiet launch and fails when a wind
   assert.equal(opened.ok, false);
   assert.match(opened.reason, /mail window opened at a background launch/);
 });
+
+test("a smoke launch's profile has usage counts off, so a CI run of a release build sends nothing (B-301)", async () => {
+  const { prepareProfile } = await import("../scripts/smoke-desktop.mjs");
+  const { createRequire } = await import("node:module");
+  const { mkdtempSync, mkdirSync, existsSync } = await import("node:fs");
+  const fs = (await import("node:fs/promises")).default;
+  const os = (await import("node:os")).default;
+  const path = (await import("node:path")).default;
+  const usage = createRequire(import.meta.url)("../desktop/analytics.cjs");
+  const root = mkdtempSync(path.join(os.tmpdir(), "fabric-smoke-test-"));
+  const appData = path.join(root, "Application Support"), userData = path.join(appData, "Fabric Inbox");
+  mkdirSync(userData, { recursive: true });
+  prepareProfile(userData);
+  assert.ok(existsSync(usage.stateFile(userData)), "written under the name the app reads");
+  const sent: unknown[] = [];
+  const a = usage.createAnalytics({ fs, bundle: { appKey: "A-SH-0123456789", host: "https://analytics.example.org", debug: false },
+    fetch: async (_url: string, init: { body: string }) => { sent.push(init.body); return { status: 200 }; }, uuid: () => "00000000-0000-4000-8000-000000000000",
+    appData, userData, appVersion: "1.8.0", platform: "linux", log: () => {} });
+  await a.start({ serverConfigured: false });
+  await a.error("utility", "killed");
+  await a.noticeShown();
+  assert.deepEqual(sent, [], "no install, start or error leaves a CI launch");
+  assert.equal(existsSync(usage.installationFile(appData)), false, "and no shared install id is made");
+});
