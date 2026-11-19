@@ -157,8 +157,9 @@ All PassionCode apps share one file:
 variables `FABRIC_INBOX_ANALYTICS_APP_KEY` and `FABRIC_INBOX_ANALYTICS_HOST` (an https origin; the
 build refuses a key without one), and the receipt says `analytics: App Key bundled` (never the
 value). The source names no analytics host: the server's domain is also a deployment domain, which
-`tests/no-owner-data.test.ts` keeps out of everything that ships. Only the release workflow's
-`macos` job sets the two variables, from the `release` environment's variable
+`tests/no-owner-data.test.ts` keeps out of everything that ships. Only the release workflow sets the two
+variables: its `macos` job, and the `windows` and `linux` jobs through `desktop/dist-platform.mjs`
+(`.github/workflows/release.yml`), from the `release` environment's variable
 `FABRIC_INBOX_ANALYTICS_HOST` (`https://analytics.owner.example`) and its secret
 `FABRIC_INBOX_ANALYTICS_APP_KEY`, which holds the App Key of the Aptabase app *Fabric Inbox*
 (`XnZ1VzR5qEmaf7KF1nkUVU`; vault `the analytics vault slot APTABASE_APP_KEY_FABRIC_INBOX`, found with
@@ -166,7 +167,11 @@ value). The source names no analytics host: the server's domain is also a deploy
 commit that contains it.
 
 Source builds, forks, `npm run desktop`, a local `npm run desktop:dmg` without the variable and the
-tests send nothing, and the menu shows the switch as unavailable. A key set by hand outside GitHub
+tests send nothing, and the menu shows the switch as unavailable. The release workflow also launches the
+Windows and Linux builds it publishes (`scripts/smoke-desktop.mjs`); since 2026-11-19 that launch's throwaway
+profile has usage counts off, so it sends nothing (B-301, `prepareProfile`). Before that each smoke launch
+counted as an install, a start and, as the smoke stopped it, an `app_error` `utility` `killed`: read the
+installs and errors sent before 2026-11-19 against the release days (`git tag`). A key set by hand outside GitHub
 Actions marks every event `isDebug: true`, so it lands under `<appId>_DEBUG`.
 
 **The Mac App Store package carries no key** (`desktop/mas-package.mjs` never reads it). A

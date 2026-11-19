@@ -851,8 +851,11 @@ function track(name, props) { if (analytics) void analytics.event(name, props); 
  */
 function watchErrors() {
   process.on('uncaughtExceptionMonitor', (error) => { if (analytics) void analytics.error('main', (error && (error.code || error.name)) || 'error'); });
-  app.on('render-process-gone', (_event, _contents, details) => { if (analytics && details.reason !== 'clean-exit') void analytics.error('renderer', details.reason); });
-  app.on('child-process-gone', (_event, details) => { if (analytics && details.reason !== 'clean-exit') void analytics.error(String(details.type || 'helper').toLowerCase(), details.reason); });
+  // B-301: a process that goes while the app quits (Quit, a logout, a signal to the whole process group) is the quit,
+  // not a crash.
+  const gone = (details) => analytics && !quitting && details.reason !== 'clean-exit';
+  app.on('render-process-gone', (_event, _contents, details) => { if (gone(details)) void analytics.error('renderer', details.reason); });
+  app.on('child-process-gone', (_event, details) => { if (gone(details)) void analytics.error(String(details.type || 'helper').toLowerCase(), details.reason); });
 }
 async function startAnalytics() {
   if (!app.isPackaged) return;
