@@ -722,7 +722,7 @@ export class CategoriesDO extends DurableObject<Env> {
     const docs = (item.files ?? []).some(readable);
     const converts = docs ? this.spendCheckReview(senderDomain(item)) : "ok";
     const files = item.files?.length ? await readFiles(item.files, whole, converts === "ok" ? this.toText() : null).catch(() => null) : null;
-    const findings = await inspectMessage({ subject: item.subject, html: item.html ?? "", files: files?.text ?? "" }, (text) =>
+    const findings = await inspectMessage({ subject: item.subject, html: item.html ?? "", files: files?.text ?? "", fileHiddenSignals: files?.hiddenSignals }, (text) =>
       this.spendSafety() ? this.safetyScan(text) : Promise.resolve({ flagged: false, error: msg("The day's safety budget was spent") }));
     if (files?.risky.length) findings.riskyFiles = files.risky;
     if (files?.unread.length) findings.unreadFiles = files.unread;
