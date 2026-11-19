@@ -39,7 +39,7 @@ test("B-218: the application is found by the server's host", () => {
 
 test("B-218: arguments are checked, and a secret is never one", () => {
   const ok = parseArgs(["--host", "inbox.example.workers.dev", "--bucket", "inbox-bucket", "--name", "Organization agent", "--vault", "org-inbox/prod", "--standing", "people,keys"]);
-  assert.deepEqual(ok, { host: "inbox.example.workers.dev", bucket: "inbox-bucket", name: "Organization agent", vault: "org-inbox/prod", duration: "8760h", standing: ["people", "keys"], slotPrefix: "FABRIC_INBOX_" });
+  assert.deepEqual(ok, { host: "inbox.example.workers.dev", bucket: "inbox-bucket", name: "Organization agent", vault: "org-inbox/prod", duration: "8760h", standing: ["people", "keys"], slotPrefix: "FABRIC_INBOX_", force: false });
   const base = ["--host", "h.example", "--bucket", "b", "--name", "n", "--vault", "p/prod"];
   assert.throws(() => parseArgs([...base, "--token", "x"]), /never an argument/);
   assert.throws(() => parseArgs(base.slice(2)), /--host is required/);
@@ -58,4 +58,14 @@ test("--vault-host puts each slot through ssh, names in the command and the valu
   assert.equal(cmd, "ssh");
   assert.deepEqual(args.slice(0, 3), ["-o", "BatchMode=yes", "studio-space"]);
   assert.match(args.at(-1), /vault\.py" put fabric-inbox prod FABRIC_INBOX_CLIENT_SECRET'$/);
+});
+
+test("B-302: a space whose login shell lacks ~/.local/bin is still reached, and --force replaces a slot", () => {
+  const [, plain] = vaultPutCommand("p", "prod", "FABRIC_INBOX_CLIENT_ID", "studio-space");
+  assert.match(plain.at(-1), /^'PATH="\$HOME\/\.local\/bin:\$PATH" OBSERVATORY_VAULT_ONLY=1 python3 "\$\(PATH="\$HOME\/\.local\/bin:\$PATH" project-observatory full-path\)/);
+  assert.ok(!plain.at(-1).includes("--force"), "no --force unless asked");
+  const [, forced] = vaultPutCommand("p", "prod", "FABRIC_INBOX_CLIENT_ID", "studio-space", true);
+  assert.match(forced.at(-1), /vault\.py" put --force p prod FABRIC_INBOX_CLIENT_ID'$/);
+  assert.equal(parseArgs(["--host", "h.example", "--bucket", "b", "--name", "n", "--vault", "p/prod", "--force"]).force, true);
+  assert.equal(parseArgs(["--host", "h.example", "--bucket", "b", "--name", "n", "--vault", "p/prod"]).force, false);
 });
