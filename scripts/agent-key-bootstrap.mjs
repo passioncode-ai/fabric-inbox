@@ -15,7 +15,9 @@
 // changes FABRIC_INBOX_ for a second server in one project). --vault-host <ssh host> puts them in the vault of another
 // machine or space instead (its own `vault.py put`, the value on ssh's stdin, never in its argv): a Studio space gets
 // its own key without the value passing through this machine's vault. Seen working 2026-11-07, moving mailboxes to an
-// organization's server (fabric-inbox docs/handoffs/2026-11-08-studio-move.md).
+// organization's server (fabric-inbox docs/handoffs/2026-11-08-studio-move.md). --force replaces slots that already hold
+// a value (a space that was handed a copy of another key first). B-302: the remote command puts ~/.local/bin on PATH
+// itself, since a space whose login shell lacks it still has `project-observatory` there.
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -68,7 +70,7 @@ export function addKey(record, token, { name, standing = [] }, now = new Date())
 }
 
 export function parseArgs(argv) {
-  const out = { duration: '8760h', standing: [], slotPrefix: 'FABRIC_INBOX_' };
+  const out = { duration: '8760h', standing: [], slotPrefix: 'FABRIC_INBOX_', force: false };
   for (let i = 0; i < argv.length; i++) {
     const [flag, value] = [argv[i], argv[i + 1]];
     if (flag === '--host') out.host = value;
@@ -79,6 +81,7 @@ export function parseArgs(argv) {
     else if (flag === '--standing') out.standing = String(value).split(',').map((s) => s.trim()).filter(Boolean);
     else if (flag === '--slot-prefix') out.slotPrefix = value;
     else if (flag === '--vault-host') out.vaultHost = value;
+    else if (flag === '--force') { out.force = true; continue; }
     else if (flag === '--token' || flag === '--secret') throw new Error(`${flag} is refused: a secret is never an argument`);
     else throw new Error(`Unknown argument ${flag}`);
     i++;
@@ -114,16 +117,17 @@ function readKeys(bucket) {
 }
 /** The command that puts one slot: this machine's vault, or with vaultHost the vault of that ssh host (a login shell, so
  *  its own `project-observatory` is found). Names only; the value goes on stdin. */
-export function vaultPutCommand(project, env, slot, vaultHost) {
+export function vaultPutCommand(project, env, slot, vaultHost, force = false) {
+  const put = force ? ['put', '--force'] : ['put'];
   if (vaultHost) {
     return ['ssh', ['-o', 'BatchMode=yes', vaultHost, 'zsh', '-lc',
-      `'OBSERVATORY_VAULT_ONLY=1 python3 "$(project-observatory full-path)/tools/vault.py" put ${project} ${env} ${slot}'`]];
+      `'PATH="$HOME/.local/bin:$PATH" OBSERVATORY_VAULT_ONLY=1 python3 "$(PATH="$HOME/.local/bin:$PATH" project-observatory full-path)/tools/vault.py" ${put.join(' ')} ${project} ${env} ${slot}'`]];
   }
   const engine = execFileSync('project-observatory', ['full-path'], { encoding: 'utf8' }).trim();
-  return ['python3', [join(engine, 'tools', 'vault.py'), 'put', project, env, slot]];
+  return ['python3', [join(engine, 'tools', 'vault.py'), ...put, project, env, slot]];
 }
-const vaultPut = (project, env, slot, value, vaultHost) => new Promise((resolve, reject) => {
-  const [cmd, args] = vaultPutCommand(project, env, slot, vaultHost);
+const vaultPut = (project, env, slot, value, vaultHost, force) => new Promise((resolve, reject) => {
+  const [cmd, args] = vaultPutCommand(project, env, slot, vaultHost, force);
   const child = spawn(cmd, args, { stdio: ['pipe', 'ignore', 'pipe'], env: { ...process.env, OBSERVATORY_VAULT_ONLY: '1' } });
   let err = '';
   child.stderr.on('data', (d) => { err += d; });
@@ -171,9 +175,9 @@ async function main() {
       putObject(opts.bucket, line.key, line.body);
     }
     const [project, env] = opts.vault.split('/');
-    await vaultPut(project, env, `${opts.slotPrefix}MCP_URL`, `https://${opts.host}/mcp`, opts.vaultHost);
-    await vaultPut(project, env, `${opts.slotPrefix}CLIENT_ID`, made.client_id, opts.vaultHost);
-    await vaultPut(project, env, `${opts.slotPrefix}CLIENT_SECRET`, made.client_secret, opts.vaultHost);
+    await vaultPut(project, env, `${opts.slotPrefix}MCP_URL`, `https://${opts.host}/mcp`, opts.vaultHost, opts.force);
+    await vaultPut(project, env, `${opts.slotPrefix}CLIENT_ID`, made.client_id, opts.vaultHost, opts.force);
+    await vaultPut(project, env, `${opts.slotPrefix}CLIENT_SECRET`, made.client_secret, opts.vaultHost, opts.force);
     console.log(JSON.stringify({ event: 'agent_key_bootstrapped', key: key.id, name: key.name, level: key.level, standing: key.standing ?? [], expiresAt: key.expiresAt, vault: opts.vault, vaultHost: opts.vaultHost ?? null, slots: `${opts.slotPrefix}{MCP_URL,CLIENT_ID,CLIENT_SECRET}` }));
   } catch (error) {
     await api(`/accounts/${account}/access/service_tokens/${made.id}`, { method: 'DELETE' }).catch(() => {});
