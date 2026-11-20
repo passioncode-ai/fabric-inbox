@@ -5,7 +5,7 @@ version (`tests/versions.test.ts`), and a release's notes are its section here: 
 builder refuses a version without one (`desktop/dist-mac.mjs`, `changelogSection`). How a release
 is cut and published: [docs/release.md](docs/release.md).
 
-## Unreleased
+## 1.9.1 (2026-11-21)
 
 **Fabric connects to Inbox with no dialog** (B-307; the owner, 2026-11-20, relayed by CEO Fabric: «это все должно быть автоматически, не надо никакой подключать, я типа установил»). A `fabric-inbox://connect` link is now allowed with no question when the app listening on its callback is Fabric's own (`ai.passioncode.desktop`), signed by the same developer team as Inbox, with a signature that verifies; the app then shows one notification instead of a dialog with OK. Every earlier check still runs (one listener, this account's socket, the same process when the key is written). Any other app, an unsigned build or another team is asked as before. To be asked every time, write `off` to `hub-auto-connect` in the app's profile. Basis: `tests/desktop-trusted-hub.test.ts`; the check run against the signatures of this Mac's installed Fabric (trusted) and Fabric Dashboards (not a hub, asked).
 
