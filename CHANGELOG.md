@@ -7,6 +7,8 @@ is cut and published: [docs/release.md](docs/release.md).
 
 ## Unreleased
 
+**Fabric connects to Inbox with no dialog** (B-307; the owner, 2026-11-20, relayed by CEO Fabric: «это все должно быть автоматически, не надо никакой подключать, я типа установил»). A `fabric-inbox://connect` link is now allowed with no question when the app listening on its callback is Fabric's own (`ai.passioncode.desktop`), signed by the same developer team as Inbox, with a signature that verifies; the app then shows one notification instead of a dialog with OK. Every earlier check still runs (one listener, this account's socket, the same process when the key is written). Any other app, an unsigned build or another team is asked as before. To be asked every time, write `off` to `hub-auto-connect` in the app's profile. Basis: `tests/desktop-trusted-hub.test.ts`; the check run against the signatures of this Mac's installed Fabric (trusted) and Fabric Dashboards (not a hub, asked).
+
 **The console's session links match Fabric's grammar** (B-305, after Fabric 0.3.26 shipped `session/open` and `session/continue` on 2026-11-20, board message `b518d8f7`). A session id in `fabric://session/open` and `session/continue` is now taken only as a UUID and sent lower-case, as fabric-agent-contract DEC-0189 SL-2 defines it; any other shape is refused in Inbox before Fabric opens, where Fabric would have refused it. The console's Claude Code session id is a UUID, so nothing a person does changes. Basis: `tests/desktop-session-links.test.ts`; the four link shapes Inbox builds parsed by the contract's own `parseFabricLink` at `4c978495`, all accepted.
 
 ## 1.9.0 (2026-11-19)

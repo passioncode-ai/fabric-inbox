@@ -382,7 +382,7 @@ const ambiguous = (listener) => Array.isArray(listener?.pids) && listener.pids.l
  * The whole exchange. Returns { outcome: 'connected' | 'denied' | 'failed', reason? }.
  * The hub hears the outcome whenever it still listens; a secret is never logged.
  */
-async function connect({ request, config, confirm, mint, revoke, deliver, signIn, identify, signedIn = async () => null, probe = null, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), pause = pauseFor, self = process.pid, log = () => {} }) {
+async function connect({ request, config, confirm, mint, revoke, deliver, signIn, identify, signedIn = async () => null, probe = null, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), pause = pauseFor, self = process.pid, log = () => {}, trusted = null }) {
   const say = (event, extra = {}) => log(JSON.stringify({ event: `connect.${event}`, client: request.clientId, level: request.level, ...extra }));
   if (!config) {
     await deliver({ state: request.state, outcome: 'failed', error: 'no_server' });
@@ -429,8 +429,13 @@ async function connect({ request, config, confirm, mint, revoke, deliver, signIn
     say('failed', { reason: 'sign_in_required', before: 'prompt' });
     return { outcome: 'failed', reason: 'sign_in_required' };
   }
+  // B-307: Fabric's own app, signed by this app's team, is connected with no dialog (the owner, 2026-11-20:
+  // «не надо никакой подключать»). Every check above still ran; only the question is skipped.
+  const hub = trusted ? await trusted(listener).catch(() => ({ trusted: false, reason: 'check_failed' })) : { trusted: false };
   const prompt = promptFor(request, config, listener);
-  const asked = await askWhileListening({ prompt, confirm, identify, port, listener, pause });
+  const asked = hub.trusted
+    ? (say('auto_allowed', { app: hub.app }), { answer: { response: 1, checkboxChecked: true } })
+    : await askWhileListening({ prompt, confirm, identify, port, listener, pause });
   if (asked.gone === 'no_listener') {
     // The requester stopped listening while the prompt was open: it is closed, nothing is made,
     // and there is nobody to tell — the queue moves on.
@@ -480,8 +485,8 @@ async function connect({ request, config, confirm, mint, revoke, deliver, signIn
     say('failed', { reason: 'callback_unreachable', keyId: key.id, revoked });
     return { outcome: 'failed', reason: 'callback_unreachable', revoked };
   }
-  say('connected', { keyId: key.id });
-  return { outcome: 'connected', keyId: key.id };
+  say('connected', { keyId: key.id, ...(hub.trusted ? { auto: true } : {}) });
+  return { outcome: 'connected', keyId: key.id, ...(hub.trusted ? { auto: true } : {}) };
 }
 
 module.exports = { parseConnectLink, promptFor, listenerWith, mintWith, signedInWith, revokeWith, deliverTo, probeWith, attendWith, pauseFor, connect,
