@@ -8,6 +8,7 @@ const policy = require('./policy.cjs');
 const deployer = require('./cloudflare-deploy.cjs');
 const profile = require('./profile.cjs');
 const connector = require('./connect.cjs');
+const { trustedHubWith } = require('./trusted-hub.cjs');
 const { ownerWith } = require('./loopback-owner.cjs');
 const { menuTemplate } = require('./menu.cjs');
 const { contextMenuTemplate } = require('./context-menu.cjs');
@@ -1410,11 +1411,19 @@ async function handleConnectLink(url) {
     probe: connector.probeWith(owner),
     signIn: async () => { loadMail(); },
     log: (line) => { try { logEvent(JSON.parse(line)); } catch { logEvent({ event: 'connect', outcome: 'unparsed' }); } },
+    // B-307: Fabric's own signed app connects with no dialog; `hub-auto-connect` = `off` in the profile asks again.
+    trusted: trustedHubWith((file, args) => new Promise((resolve, reject) => execFile(file, args, { timeout: 10000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => (error ? reject(Object.assign(error, { stdout, stderr })) : resolve({ stdout, stderr })))), {
+      enabled: async () => { try { return (await fs.readFile(path.join(app.getPath('userData'), 'hub-auto-connect'), 'utf8')).trim() !== 'off'; } catch { return true; } },
+    }),
   });
   // A requester that stopped waiting gets no notice: nothing was made, the hub already gave up, and
   // a notice nobody reads would hold the next link's prompt back.
   if (out.reason === 'no_listener' || out.reason === 'not_answered') return;
-  if (out.outcome === 'connected') {
+  if (out.outcome === 'connected' && out.auto) {
+    // Nobody started this by hand, so nobody is asked to press OK: one notification says what happened.
+    track('hub_connected', {});
+    notify(t('{client} is connected to Fabric Inbox.', { client: request.client }), t('You can see and revoke its key in Settings → Agent access.'));
+  } else if (out.outcome === 'connected') {
     track('hub_connected', {});
     await box({ type: 'info', title: t('Connected'), message: t('{client} is connected to Fabric Inbox.', { client: request.client }), detail: t('You can see and revoke its key in Settings → Agent access.'), buttons: [t('OK')] });
   } else if (out.outcome === 'failed') {
