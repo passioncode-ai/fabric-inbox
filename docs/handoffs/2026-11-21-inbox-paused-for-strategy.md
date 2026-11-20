@@ -31,6 +31,21 @@ The owner's installed app was on 1.7.1 with 1.9.0 downloaded; the lifecycle brok
 | B-311 sleep, B-312 stage logs | not started beyond `retain_until` | as above |
 | B-313 Hermes in the reply agents (agents base request `3dcfbea5`) | open, date given on the board 2026-11-24 | |
 
+### The strategic plan arrived (2026-11-21, board request `f8ffcc11`)
+
+The system plan's spec for Inbox (fabric-workspace `docs/plans/2026-11-21-system-design/specs/fabric-inbox.md`) orders
+three features. In this board they are: SD-INB-01 (found by Fabric again, wave 0, due 2026-11-25) as B-314; SD-INB-02
+(the `notice/1` feed, wave 2, due 2026-12-19) as B-308; SD-INB-03 (connects by itself, wave 2, due 2026-12-23) as
+B-315. Wave 2 starts when Fabric starts SD-FAB-09 (Home), not before 2026-12-08. The spec's SD-INB-02 says «resume B-308
+to B-312», but its own «Later waves» puts the graph (spam kept briefly, bounded growth) in wave 4; so B-308 alone is
+SD-INB-02 and B-309 to B-312 wait for wave 4 (decision: the spec's later section is the specific one; told on the board).
+
+Memory's answer for B-309 when it resumes (Fabric session 0daa75f1, 2026-11-21): keep the names as they are
+(`node_kind` person, org, project, topic, decision; ids `mail:person:…` and so on). Memory now takes Fabric's projects
+only by the id `project:<uuid>`, so a `mail:project:…` node is not mistaken for one of Fabric's projects. When a thread
+is known to belong to a Fabric project, add an edge to `project:<Fabric's id>` with rel `relates-to`: the message then
+shows on that project's card and in its search.
+
 ## How Inbox stores mail today (measured in code, not on production)
 
 Each address is one `MailboxDO` SQLite database (`workers/durableObject/migrations.ts`); a body over 400,000 characters
@@ -43,6 +58,7 @@ needs the signed-in `GET /api/storage` on the running server.
 
 ## Next task
 
-Follow board request `85e5af41` until Fabric's reader
-accepts every Inbox descriptor and Fabric connects by itself; then prove an agent call through Fabric's hub reaches
-Inbox. The paused rows wait for the strategic plan.
+B-314 (SD-INB-01): when Fabric publishes 0.3.28 with its reader fix `279dcd15` (request `85e5af41`), put `runner` back
+into this Mac's `fabric-inbox.default.json` (backup kept outside Git), check that Fabric's registry lists both Inbox
+descriptors on a fresh start, and prove an agent call through Fabric's hub reaches Inbox. Then close B-314 with that
+receipt. B-308 and B-315 wait for wave 2 (not before 2026-12-08); B-309 to B-312 for wave 4.
