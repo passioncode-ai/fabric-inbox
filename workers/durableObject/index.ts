@@ -38,6 +38,16 @@ import { listDrafts as listDraftRows, saveDraft as saveDraftRows, type DraftSql,
 import { htmlToText } from '../../shared/mail/text';
 import { msg } from "../../shared/i18n";
 import { readCreated } from "../lib/address-created";
+import { SPAM_RETENTION_DAYS_DEFAULT, spamMaxMessages, spamRetentionMs } from "../spam/retention";
+import type { MailEntities, MemoryRow } from "../memory/bundle";
+import { parseStoredHeaders as storedHeaders } from "../agents/prefilter";
+import { threadNode } from "../memory/bundle";
+
+/** B-309: the most messages one memory page reads, the characters of text it returns of each, the headers it reads. */
+export const MEMORY_PAGE_MAX = 200;
+const MEMORY_TEXT_MAX = 20_000;
+const MEMORY_HEADERS = new Set(["list-id", "list-unsubscribe", "auto-submitted", "precedence", "content-type", "return-path",
+	"x-autoreply", "x-autorespond", "x-auto-response-suppress", "reply-to"]);
 
 /** B-29: when this mailbox was purged; while set, deliveries are refused with MAILBOX_CLOSED. */
 const CLOSED_KEY = "mailbox:closed-at";
@@ -123,8 +133,8 @@ const SPAM_HOLD_MS = 15 * 60_000;
 const NOT_SPAM_REDELIVER_MS = 3 * 86_400_000;
 /** M-8: how long a forwarding copy still owed holds a rename of its address. */
 const COPY_BLOCKS_RENAME_MS = 86_400_000;
-/** Spam is kept this long, then deleted with its attachments (SP-5). */
-export const SPAM_RETENTION_MS = 30 * 86_400_000;
+/** Spam is kept this long by default, then deleted with its attachments (SP-5); SPAM_RETENTION_DAYS changes it (B-310). */
+export const SPAM_RETENTION_MS = SPAM_RETENTION_DAYS_DEFAULT * 86_400_000;
 /** Messages one retention pass deletes; their files go in one R2 call per R2_DELETE_KEYS keys (B-90). */
 export const PURGE_ROWS = 200;
 const R2_DELETE_KEYS = 1000;
@@ -830,6 +840,86 @@ export class MailboxDO extends DurableObject<Env> {
 			    WHERE folder_id NOT IN ('sent', 'draft', 'spam', 'discarded') AND date IS NOT NULL GROUP BY COALESCE(thread_id, id))
 			 SELECT i.first_in AS firstIn, t.topic AS topic, t.negative AS negative, t.money AS money FROM incoming i LEFT JOIN thread_topics t ON t.thread_key = i.key`,
 		).toArray().map((r) => ({ firstIn: String(r.firstIn), topic: r.topic === null ? null : String(r.topic), negative: Number(r.negative ?? 0) === 1, money: r.money === null ? null : String(r.money) }));
+	}
+
+	// ── Memory: the mail graph (B-309, B-311) ─────────────────────
+
+	/**
+	 * B-309: the messages that arrived or changed folder after change number `after` (the memory bundle's cursor), oldest
+	 * change first, at most `limit`: what workers/memory/bundle.ts reads and filters. `next` is the cursor after this page,
+	 * `latest` the newest change number, `more` true when a full page was read.
+	 */
+	async memoryPage(after: number, limit: number): Promise<{ rows: MemoryRow[]; next: number; latest: number; more: boolean }> {
+		const n = Math.max(1, Math.min(Math.floor(limit) || 1, MEMORY_PAGE_MAX));
+		const from = Math.max(0, Math.floor(after) || 0);
+		const changes = this.ctx.storage.sql.exec<{ email_id: string; seq: number }>(
+			"SELECT email_id, seq FROM memory_changes WHERE seq > ? ORDER BY seq LIMIT ?", from, n).toArray();
+		const latest = Number((this.ctx.storage.sql.exec("SELECT n FROM memory_seq WHERE id = 1").toArray()[0] as { n?: number } | undefined)?.n ?? 0);
+		const seqs = new Map(changes.map((c) => [String(c.email_id), Number(c.seq)]));
+		const rows = this.memoryRows([...seqs.keys()]).map((r) => ({ ...r, seq: seqs.get(r.id) ?? 0 })).sort((a, b) => a.seq - b.seq);
+		return { rows, next: changes.length ? Number(changes[changes.length - 1].seq) : from, latest, more: changes.length === n };
+	}
+
+	/**
+	 * B-311 (healing): every message of the conversation whose Memory node is `node` (`mail:t-<hash>`), so its links can
+	 * be written again. The conversations are found by hashing their keys (at most 50,000), since a node id is a hash.
+	 */
+	async memoryThread(node: string): Promise<MemoryRow[]> {
+		if (!/^mail:t-[0-9a-f]{32}$/.test(node)) return [];
+		const keys = this.ctx.storage.sql.exec<{ k: string }>("SELECT DISTINCT COALESCE(thread_id, id) AS k FROM emails WHERE folder_id <> 'draft' LIMIT 50000").toArray();
+		for (const { k } of keys) {
+			if (await threadNode(String(k)) !== node) continue;
+			const ids = this.ctx.storage.sql.exec<{ id: string }>(
+				"SELECT id FROM emails WHERE COALESCE(thread_id, id) = ? ORDER BY julianday(date), id LIMIT ?", String(k), MEMORY_PAGE_MAX).toArray().map((r) => String(r.id));
+			return this.memoryRows(ids).map((r) => ({ ...r, seq: 0 }));
+		}
+		return [];
+	}
+
+	private memoryRows(ids: string[]): Omit<MemoryRow, "seq">[] {
+		if (!ids.length) return [];
+		const kept = "('spam', 'discarded', 'trash', 'draft')";
+		const rows = this.ctx.storage.sql.exec<Record<string, string | null>>(
+			`SELECT e.id, e.folder_id, e.subject, e.sender, e.sender_name, e.recipient, e.cc, e.date, e.message_id, COALESCE(e.thread_id, e.id) AS thread_key,
+			   e.search_text, CASE WHEN e.search_text IS NULL THEN e.body ELSE NULL END AS body, e.raw_headers, t.topic AS topic, m.body AS entities,
+			   CASE WHEN e.thread_id IS NULL THEN e.date
+			     ELSE (SELECT MAX(x.date) FROM emails x WHERE x.thread_id = e.thread_id AND x.folder_id NOT IN ${kept}) END AS thread_last
+			 FROM emails e LEFT JOIN thread_topics t ON t.thread_key = COALESCE(e.thread_id, e.id) LEFT JOIN memory_entities m ON m.email_id = e.id
+			 WHERE e.id IN (SELECT value FROM json_each(?))`, JSON.stringify(ids)).toArray();
+		return rows.map((r) => {
+			let entities: MailEntities | null = null;
+			try { entities = r.entities ? JSON.parse(String(r.entities)) as MailEntities : null; } catch { entities = null; }
+			const text = r.search_text ?? htmlToText(String(r.body ?? ""));
+			return {
+				id: String(r.id), folder: String(r.folder_id), subject: String(r.subject ?? ""), sender: String(r.sender ?? ""), senderName: r.sender_name ?? null,
+				recipient: String(r.recipient ?? ""), cc: String(r.cc ?? ""), date: String(r.date ?? ""), messageId: r.message_id ?? null, threadKey: String(r.thread_key),
+				text: String(text).slice(0, MEMORY_TEXT_MAX), topic: r.topic ?? null, threadLast: r.thread_last ?? null, entities,
+				headers: storedHeaders(r.raw_headers).filter((h) => MEMORY_HEADERS.has(h.key.toLowerCase())),
+			};
+		});
+	}
+
+	/** B-309: grants up to `want` of the model step's calls from this mailbox's day (`max` a day); counted when granted. */
+	async memoryModelGrant(want: number, max: number, now = Date.now()): Promise<number> {
+		const day = new Date(now).toISOString().slice(0, 10);
+		const state = (await this.ctx.storage.get<{ day: string; calls: number }>("memory_model_budget")) ?? { day, calls: 0 };
+		if (state.day !== day) { state.day = day; state.calls = 0; }
+		const granted = Math.max(0, Math.min(Math.floor(want), max - state.calls));
+		if (granted) { state.calls += granted; await this.ctx.storage.put("memory_model_budget", state); }
+		return granted;
+	}
+
+	/** B-309: keeps what the model step found in messages; a message deleted later takes its row with it (migration 23). */
+	async saveMemoryEntities(found: { id: string; entities: MailEntities }[]): Promise<number> {
+		const at = new Date().toISOString();
+		let written = 0;
+		for (const f of found.slice(0, MEMORY_PAGE_MAX)) {
+			if (!this.ctx.storage.sql.exec("SELECT 1 FROM emails WHERE id = ?", f.id).toArray().length) continue;
+			this.ctx.storage.sql.exec("INSERT OR REPLACE INTO memory_entities (email_id, body, model, at) VALUES (?, ?, ?, ?)",
+				f.id, JSON.stringify(f.entities).slice(0, 20_000), String(f.entities.model).slice(0, 120), at);
+			written++;
+		}
+		return written;
 	}
 
 	/** B-138: who sent each message of a conversation (the agent, its waiting reply, or a person), by message id. */
@@ -1859,17 +1949,26 @@ export class MailboxDO extends DurableObject<Env> {
   }
 
   /**
-   * Deletes what has been in Spam longer than `SPAM_RETENTION_MS` (or all of it with
-   * `all`), with the attachments' bytes; returns how many went. The clock is `spam_at`,
+   * Deletes what has been in Spam longer than the server's keeping time (SPAM_RETENTION_DAYS, B-310), the oldest past
+   * its cap (SPAM_MAX_MESSAGES), or all of it with `all`, with the attachments' bytes; returns how many went. The clock is `spam_at`,
    * when it entered Spam, never its arrival. Runs on the mailbox's alarm (SP-5).
    */
   async purgeSpam(options: { all?: boolean; now?: number } = {}): Promise<number> {
-    const cutoff = new Date((options.now ?? Date.now()) - SPAM_RETENTION_MS).toISOString();
-    const due = () => options.all
-      ? this.ctx.storage.sql.exec("SELECT id FROM emails WHERE folder_id = 'spam' LIMIT ?", PURGE_ROWS).toArray()
-      : this.ctx.storage.sql.exec("SELECT id FROM emails WHERE folder_id = 'spam' AND spam_at IS NOT NULL AND spam_at < ? LIMIT ?", cutoff, PURGE_ROWS).toArray();
+    const cutoff = new Date((options.now ?? Date.now()) - this.spamKeepMs()).toISOString();
+    // B-310: past the mailbox's cap, the oldest in Spam go too (by when they entered it), so a flood cannot fill it.
+    const cap = spamMaxMessages((this.env as Env).SPAM_MAX_MESSAGES);
+    let over = 0;
+    const due = () => {
+      if (options.all) return this.ctx.storage.sql.exec("SELECT id FROM emails WHERE folder_id = 'spam' LIMIT ?", PURGE_ROWS).toArray();
+      const old = this.ctx.storage.sql.exec("SELECT id FROM emails WHERE folder_id = 'spam' AND spam_at IS NOT NULL AND spam_at < ? LIMIT ?", cutoff, PURGE_ROWS).toArray();
+      if (old.length) return old;
+      const excess = Math.min(PURGE_ROWS, Math.max(0, this.countSpamNow() - cap));
+      if (!excess) return [];
+      over += excess;
+      return this.ctx.storage.sql.exec("SELECT id FROM emails WHERE folder_id = 'spam' ORDER BY spam_at IS NULL, spam_at, id LIMIT ?", excess).toArray();
+    };
     const { deleted, more, failed } = await this.purgePasses(due, "spam", options.all ? PURGE_PASSES_ALL : 1);
-    if (deleted) console.log(JSON.stringify({ event: "spam_purged", count: deleted, all: !!options.all }));
+    if (deleted) console.log(JSON.stringify({ event: "spam_purged", count: deleted, all: !!options.all, ...(over ? { overCap: over } : {}) }));
     if (failed) await this.armRetry(PURGE_RETRY_MS);
     else if (more) await this.armRetry(1000);
     else await this.armSpamPurge();
@@ -1877,14 +1976,22 @@ export class MailboxDO extends DurableObject<Env> {
   }
 
   async countSpam(): Promise<number> {
+    return this.countSpamNow();
+  }
+  private countSpamNow(): number {
     return Number((this.ctx.storage.sql.exec("SELECT COUNT(*) AS n FROM emails WHERE folder_id = 'spam'").one() as { n: number }).n);
   }
+  /** B-310: how long this server keeps Spam (SPAM_RETENTION_DAYS, default 30 days). */
+  private spamKeepMs(): number {
+    return spamRetentionMs((this.env as Env).SPAM_RETENTION_DAYS);
+  }
 
-  /** Wakes the mailbox when its oldest Spam turns 30 days old. */
+  /** Wakes the mailbox when its oldest Spam reaches the server's keeping time, or at once when Spam is over its cap. */
   private async armSpamPurge() {
     const oldest = this.ctx.storage.sql.exec("SELECT MIN(spam_at) AS d FROM emails WHERE folder_id = 'spam'").one() as { d: string | null };
     if (!oldest.d) return;
-    const due = Math.max(Date.now() + 1000, Date.parse(oldest.d) + SPAM_RETENTION_MS + 60_000);
+    const overCap = this.countSpamNow() > spamMaxMessages((this.env as Env).SPAM_MAX_MESSAGES);
+    const due = overCap ? Date.now() + 1000 : Math.max(Date.now() + 1000, Date.parse(oldest.d) + this.spamKeepMs() + 60_000);
     const current = await this.ctx.storage.getAlarm();
     if (current === null || current > due) await this.ctx.storage.setAlarm(due);
   }

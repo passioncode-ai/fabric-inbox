@@ -260,6 +260,39 @@ export const mailboxMigrations: Migration[] = [
 			labeled_at TEXT NOT NULL
 		);`),
 	},
+	{
+		// B-309: the mail graph's change feed. Every message that arrives, or moves to another folder, takes the next number
+		// of `memory_seq`, kept in `memory_changes` (one row per message, gone with it), so the memory bundle reads what
+		// changed since a cursor. `memory_entities` keeps what the optional model step found in a message, gone with it too.
+		// Mail already stored is numbered oldest first, so a first export starts from the oldest.
+		name: "23_memory_changes",
+		sql: "",
+		run: (sql) => {
+			for (const statement of MEMORY_CHANGES_SQL) sql.exec(statement);
+		},
+	},
+];
+
+/** Migration 23's statements, one per exec (a trigger's body holds its own semicolons). */
+export const MEMORY_CHANGES_SQL = [
+	`CREATE TABLE IF NOT EXISTS memory_seq (id INTEGER PRIMARY KEY CHECK (id = 1), n INTEGER NOT NULL)`,
+	`CREATE TABLE IF NOT EXISTS memory_changes (email_id TEXT PRIMARY KEY, seq INTEGER NOT NULL)`,
+	`CREATE INDEX IF NOT EXISTS idx_memory_changes_seq ON memory_changes(seq)`,
+	`CREATE TABLE IF NOT EXISTS memory_entities (email_id TEXT PRIMARY KEY, body TEXT NOT NULL, model TEXT NOT NULL, at TEXT NOT NULL)`,
+	`INSERT OR IGNORE INTO memory_changes (email_id, seq) SELECT id, ROW_NUMBER() OVER (ORDER BY julianday(date), id) FROM emails`,
+	`INSERT OR REPLACE INTO memory_seq (id, n) VALUES (1, (SELECT COALESCE(MAX(seq), 0) FROM memory_changes))`,
+	`CREATE TRIGGER IF NOT EXISTS memory_change_insert AFTER INSERT ON emails BEGIN
+		UPDATE memory_seq SET n = n + 1 WHERE id = 1;
+		INSERT OR REPLACE INTO memory_changes (email_id, seq) VALUES (NEW.id, (SELECT n FROM memory_seq WHERE id = 1));
+	END`,
+	`CREATE TRIGGER IF NOT EXISTS memory_change_move AFTER UPDATE OF folder_id ON emails WHEN OLD.folder_id IS NOT NEW.folder_id BEGIN
+		UPDATE memory_seq SET n = n + 1 WHERE id = 1;
+		INSERT OR REPLACE INTO memory_changes (email_id, seq) VALUES (NEW.id, (SELECT n FROM memory_seq WHERE id = 1));
+	END`,
+	`CREATE TRIGGER IF NOT EXISTS memory_change_delete AFTER DELETE ON emails BEGIN
+		DELETE FROM memory_changes WHERE email_id = OLD.id;
+		DELETE FROM memory_entities WHERE email_id = OLD.id;
+	END`,
 ];
 
 /** The id and name a person's own folder gets when it held the id 'discarded' (migration 18). */

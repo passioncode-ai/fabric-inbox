@@ -19,6 +19,16 @@ export interface Env extends Cloudflare.Env {
 	SPAM_DAILY_LIMIT?: string;
 	/** Workers AI model of the spam check (B-172); defaults to CATEGORY_MODEL, then AUTOMATION_MODEL, then llama-4-scout. */
 	SPAM_MODEL?: string;
+	/** B-310: days a Cloudflare mailbox keeps Spam from when it entered Spam (default 30, 1 to 365); then the alarm deletes it. */
+	SPAM_RETENTION_DAYS?: string;
+	/** B-310: at most this many messages in one mailbox's Spam (default 10000, 100 to 1000000); the oldest go first past it. */
+	SPAM_MAX_MESSAGES?: string;
+	/** B-311: days a conversation stays in Memory after its last message (its `retain_until`; default 180, 1 to 3650). */
+	MEMORY_RETAIN_DAYS?: string;
+	/** B-309: the OpenRouter model that names projects, topics and decisions for the mail graph (moonshotai/kimi-*, z-ai/glm-* or deepseek/*); unset: off. */
+	MEMORY_MODEL?: string;
+	/** B-309: that model's calls a UTC day per mailbox (default 50; 0 turns it off). */
+	MEMORY_MODEL_CALLS?: string;
 	/** B-178: "off" turns the arrival safety check off (on by default). */
 	SAFETY_CHECK?: string;
 	/** B-178: model calls of the safety check and its reviews per day (default 2000). */

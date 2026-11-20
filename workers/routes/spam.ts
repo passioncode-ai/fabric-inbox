@@ -8,6 +8,7 @@ import { DEFAULT_SPAM_DAILY_CALLS } from "../categories/store";
 import { ListEdit, Report } from "../spam/inputs";
 import { parseRemoteAccount } from "../../shared/mail/accounts";
 import { msg } from "../../shared/i18n";
+import { spamRetentionDays } from "../spam/retention";
 
 /**
  * Spam (SP-3, SP-4, SP-6): the operator's lists, Report spam / Not spam for both
@@ -17,6 +18,7 @@ import { msg } from "../../shared/i18n";
  */
 export const spamRouter = new Hono<{ Bindings: Env }>();
 type C = Context<{ Bindings: Env }>;
+/** The default; a server sets its own with SPAM_RETENTION_DAYS (B-310, workers/spam/retention.ts). */
 export const SPAM_RETENTION_DAYS = 30;
 
 function failure(c: C, error: unknown, action: string) {
@@ -32,7 +34,7 @@ spamRouter.get("/api/spam", async (c) => {
     const model = c.env.CATEGORIES
       ? await c.env.CATEGORIES.getByName("workspace").spamStats().catch(() => null)
       : null;
-    return c.json({ lists, retentionDays: SPAM_RETENTION_DAYS,
+    return c.json({ lists, retentionDays: spamRetentionDays(c.env.SPAM_RETENTION_DAYS),
       model: model ?? { used: 0, limit: Number(c.env.SPAM_DAILY_LIMIT) || DEFAULT_SPAM_DAILY_CALLS, spamToday: 0, screenedToday: 0, unavailable: true } });
   } catch (error) { return failure(c, error, msg("Reading the spam rules")); }
 });
@@ -100,7 +102,7 @@ async function move(c: C, spam: boolean) {
 spamRouter.post("/api/spam/report", (c) => move(c, true));
 spamRouter.post("/api/spam/release", (c) => move(c, false));
 
-/** Deletes everything in Spam now, in every Cloudflare mailbox; Gmail keeps its own 30 days. */
+/** Deletes everything in Spam now, in every Cloudflare mailbox; Gmail keeps its own Spam for its own 30 days. */
 spamRouter.post("/api/spam/empty", async (c) => {
   try {
     // `addresses` empties only those Cloudflare mailboxes (a member's, B-149); absent, every one.
