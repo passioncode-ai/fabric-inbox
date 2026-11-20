@@ -16,7 +16,7 @@ and its live check go on. This file is the strategist's entry point for what is 
 | Fabric's own reader fix and Fabric starting the connect by itself | board request `85e5af41` to Fabric (also sent to Fabric session 8343a070); four more descriptors of other agents fail the same way |
 | A connect link from Fabric's own signed app is allowed with no dialog (B-307) | PR #602 (`f7b66260`), `tests/desktop-trusted-hub.test.ts`; checked against this Mac's real signatures |
 | Live check: the server answers agents (MCP `initialize` 200, `list_accounts` 200 with the vault's agent key) and a test message sent through `send_test_message` arrived in 6 s | run on 2026-11-20 ~22:08 UTC |
-| Release 1.9.1 carries B-307 and B-305 | this branch |
+| Release 1.9.1 carries B-307 and B-305 | tag `v1.9.1` on `a1ce1b24`, release run 44829245109 green, published 2026-11-20 22:49 UTC; `SHA256SUMS.asc` good signature, `update-mac.json` sums OK, `currentRelease` 1.9.1, attestation verified |
 
 The owner's installed app was on 1.7.1 with 1.9.0 downloaded; the lifecycle broker refused a restart
 (`not_started_by_broker`: the owner started it), so the update installs at the app's next quit.
@@ -43,6 +43,6 @@ needs the signed-in `GET /api/storage` on the running server.
 
 ## Next task
 
-Release 1.9.1 (tag, watch the run, check the download), then follow board request `85e5af41` until Fabric's reader
+Follow board request `85e5af41` until Fabric's reader
 accepts every Inbox descriptor and Fabric connects by itself; then prove an agent call through Fabric's hub reaches
 Inbox. The paused rows wait for the strategic plan.
