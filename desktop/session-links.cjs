@@ -16,8 +16,12 @@ const FROM = 'fabric-inbox';
 const PROJECT_REF = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 /** A runner kind as Fabric's runner catalogue names one. */
 const RUNNER_KIND = /^[a-z][a-z0-9-]{1,62}$/;
-/** A session id: Fabric's own, or a runner's (Claude Code's is a UUID). Same shape as a project ref. */
-const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+/**
+ * A session id as the contract takes one (fabric-agent-contract DEC-0189 SL-2, `src/fabric-links.ts` SESSION_ID): a
+ * Fabric session's or a runner session's UUID in its 8-4-4-4-12 hex form, sent lower-case. Any other shape Fabric
+ * refuses, so it is refused here before anything opens.
+ */
+const SESSION_ID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 /** The console's runtimes (desktop/console.cjs RUNTIMES) by the runner kind Fabric knows them as. */
 const RUNNERS = { claude: 'claude-code', codex: 'codex' };
 const MAX_LINK_LENGTH = 2048;
@@ -38,7 +42,7 @@ function sessionLink(input) {
   } else if (action === 'open' || action === 'continue') {
     const session = String(input.session ?? '');
     if (!SESSION_ID.test(session)) return { ok: false, error: 'session' };
-    params.set('session', session);
+    params.set('session', session.toLowerCase());
   } else {
     return { ok: false, error: 'action' };
   }

@@ -25,6 +25,7 @@ test("the three links carry ids only and from=fabric-inbox", () => {
   assert.deepEqual(sessionLink({ action: "new", project: " Acme " }), { ok: true, url: "fabric://session/new?project=Acme&from=fabric-inbox" });
   assert.deepEqual(sessionLink({ action: "open", session: ID }), { ok: true, url: `fabric://session/open?session=${ID}&from=fabric-inbox` });
   assert.deepEqual(sessionLink({ action: "continue", session: ID }), { ok: true, url: `fabric://session/continue?session=${ID}&from=fabric-inbox` });
+  assert.deepEqual(sessionLink({ action: "open", session: ID.toUpperCase() }), { ok: true, url: `fabric://session/open?session=${ID.toLowerCase()}&from=fabric-inbox` });
 });
 
 test("a value that is not an id refuses the whole link (DEC-0040 FL-3)", () => {
@@ -35,6 +36,10 @@ test("a value that is not an id refuses the whole link (DEC-0040 FL-3)", () => {
   assert.deepEqual(sessionLink({ action: "new", project: "a", runner: "Claude" }), { ok: false, error: "runner" });
   assert.deepEqual(sessionLink({ action: "open", session: "" }), { ok: false, error: "session" });
   assert.deepEqual(sessionLink({ action: "continue", session: "a b" }), { ok: false, error: "session" });
+  // DEC-0189 SL-2: a session id is a UUID; Fabric refuses any other shape, so Inbox refuses it before opening.
+  assert.deepEqual(sessionLink({ action: "open", session: "abc" }), { ok: false, error: "session" });
+  assert.deepEqual(sessionLink({ action: "continue", session: "urn:session:1" }), { ok: false, error: "session" });
+  assert.deepEqual(sessionLink({ action: "open", session: `${ID}0` }), { ok: false, error: "session" });
   assert.deepEqual(sessionLink({ action: "start", project: "a" }), { ok: false, error: "action" });
   assert.deepEqual(sessionLink({ action: "new", project: "a".repeat(129) }), { ok: false, error: "project" });
 });
