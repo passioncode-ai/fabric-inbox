@@ -46,6 +46,12 @@ only by the id `project:<uuid>`, so a `mail:project:…` node is not mistaken fo
 is known to belong to a Fabric project, add an edge to `project:<Fabric's id>` with rel `relates-to`: the message then
 shows on that project's card and in its search.
 
+A gate before the first export (Memory, the same day): Memory's fix that picks Fabric's projects, tasks and requests by
+the ids `project:`, `task:` and `message:` is on branch `fix/memory-source-kinds` (`ad80676a`) of the fabric repository,
+not yet in main. Until it is in a released Fabric, write nothing into `estate-index/sources/fabric-inbox` on any machine,
+or Inbox's `mail:project:…` nodes show on Memory's map as Fabric projects. On 2026-11-21 that folder does not exist on
+this Mac and `feat/mail-graph` is not in main, so nothing writes there.
+
 ## How Inbox stores mail today (measured in code, not on production)
 
 Each address is one `MailboxDO` SQLite database (`workers/durableObject/migrations.ts`); a body over 400,000 characters
